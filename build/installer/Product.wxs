@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="Playgrounds"
+      Manufacturer="Playgrounds"
+      Version="$(var.Version)"
+      UpgradeCode="B7E3C1F2-5A4D-4C8B-9E21-3F6D8A9C2B10"
+      Scope="perUser"
+      Compressed="yes">
+
+    <SummaryInformation
+        Description="Playgrounds AI Playground"
+        Manufacturer="Playgrounds" />
+
+    <MajorUpgrade DowngradeErrorMessage="Versi Playgrounds yang lebih baru sudah terpasang." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="Playgrounds" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Playgrounds" />
+    </StandardDirectory>
+
+    <Feature Id="MainFeature" Title="Playgrounds" Level="1">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentRef Id="ApplicationShortcut" />
+    </Feature>
+
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Files Include="$(var.SourceDir)\**" />
+    </ComponentGroup>
+
+    <Component
+        Id="ApplicationShortcut"
+        Directory="ApplicationProgramsFolder"
+        Guid="6D2F5B41-9C3A-4E77-8A15-2C4B8D7E9F30">
+      <Shortcut
+          Id="StartMenuShortcut"
+          Name="Playgrounds"
+          Description="AI playground desktop"
+          Target="[INSTALLFOLDER]Playgrounds.exe"
+          WorkingDirectory="INSTALLFOLDER" />
+      <RemoveFolder Id="RemoveApplicationProgramsFolder" On="uninstall" />
+      <RegistryValue
+          Root="HKCU"
+          Key="Software\Playgrounds"
+          Name="installed"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+    </Component>
+  </Package>
+</Wix>

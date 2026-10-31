@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+build/app.ico
+build/playgrounds/
+build/installer/bin/
+build/installer/obj/
+dist/
+*.msi
+*.wixpdb
+.pytest_cache/
+.ruff_cache/
