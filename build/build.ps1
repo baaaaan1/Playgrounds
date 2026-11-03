@@ -19,14 +19,17 @@ try {
 
     Write-Host "==> icon"
     python build\make_icon.py
+    if ($LASTEXITCODE -ne 0) { throw "icon generation failed" }
 
     Write-Host "==> pyinstaller (onedir)"
     python -m PyInstaller --noconfirm --clean build\playgrounds.spec
     if ($LASTEXITCODE -ne 0) { throw "pyinstaller failed" }
 
     Write-Host "==> smoke test packaged exe"
-    & "$root\dist\Playgrounds\Playgrounds.exe" --smoke
-    if ($LASTEXITCODE -ne 0) { throw "packaged smoke test failed" }
+    foreach ($mode in @("--smoke", "--smoke-native")) {
+        python -c "import subprocess, sys; code = subprocess.run([sys.argv[1], sys.argv[2]], timeout=30).returncode; print(sys.argv[2], 'exit:', code); sys.exit(code)" "$root\dist\Playgrounds\Playgrounds.exe" $mode
+        if ($LASTEXITCODE -ne 0) { throw "packaged smoke test failed ($mode)" }
+    }
 
     Write-Host "Built dist\Playgrounds\Playgrounds.exe"
 

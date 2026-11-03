@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+from time import monotonic
 
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QColor, QTextCharFormat, QTextCursor
@@ -21,7 +22,11 @@ class ChatView(QTextBrowser):
         self._conversation: Conversation | None = None
         self._streaming = False
         self._pending = ""
+        self._stream_text = ""
         self._stream_format = QTextCharFormat()
+        self._thinking_started = 0.0
+        self._thinking_seconds: float | None = None
+        self._thinking_cursor: QTextCursor | None = None
 
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setOpenExternalLinks(True)
@@ -33,10 +38,35 @@ class ChatView(QTextBrowser):
         self._flush_timer = QTimer(self)
         self._flush_timer.setInterval(50)
         self._flush_timer.timeout.connect(self._flush)
+        self._thinking_timer = QTimer(self)
+        self._thinking_timer.setInterval(100)
+        self._thinking_timer.timeout.connect(self._update_thinking)
+        self._scroll_timer = QTimer(self)
+        self._scroll_timer.setSingleShot(True)
+        self._scroll_timer.timeout.connect(self._scroll_after_layout)
 
     def set_tokens(self, tokens: dict[str, str]) -> None:
         self._tokens = dict(tokens)
-        if self._conversation is not None:
+        if self._streaming:
+            # The current response is not in the conversation until completion.
+            text = self._stream_text + self._pending
+            thinking_started = self._thinking_started
+            thinking_seconds = self._thinking_seconds
+            at_bottom = self._at_bottom()
+            position = self.verticalScrollBar().value()
+            self._rebuild()
+            self.begin_stream()
+            self._thinking_started = thinking_started
+            if thinking_seconds is not None:
+                self.set_thinking_time(thinking_seconds)
+            else:
+                self._update_thinking()
+            self.feed(text)
+            self._flush()
+            if not at_bottom:
+                self._scroll_timer.stop()
+                self.verticalScrollBar().setValue(position)
+        elif self._conversation is not None:
             self._rebuild()
 
     def show_conversation(self, conversation: Conversation | None) -> None:
@@ -46,21 +76,33 @@ class ChatView(QTextBrowser):
     def clear_chat(self) -> None:
         self._streaming = False
         self._pending = ""
+        self._stream_text = ""
         self._flush_timer.stop()
+        self._thinking_timer.stop()
+        self._thinking_cursor = None
         self._conversation = None
         self.clear()
 
     def begin_stream(self) -> None:
         self._streaming = True
         self._pending = ""
+        self._stream_text = ""
+        self._thinking_started = monotonic()
+        self._thinking_seconds = None
         self._flush_timer.start()
+        self._thinking_timer.start()
 
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
         cursor.insertHtml(
             f'<div style="margin-top:10px; margin-bottom:6px; color:{self._tokens["text_faint"]};'
-            f' font-size:8pt; letter-spacing:1.4px;">ASISTEN</div>'
+            f' font-size:8pt; letter-spacing:1.4px;">ASISTEN | </div>'
         )
+        start = cursor.position()
+        cursor.insertText("Thinking... 0.0s")
+        self._thinking_cursor = QTextCursor(cursor)
+        self._thinking_cursor.setPosition(start, QTextCursor.MoveMode.KeepAnchor)
+        cursor.insertBlock()
         self.setTextCursor(cursor)
 
         fmt = QTextCharFormat()
@@ -69,6 +111,25 @@ class ChatView(QTextBrowser):
         fmt.setFontPointSize(10.5)
         self._stream_format = fmt
         self._scroll_to_bottom()
+
+    def set_thinking_time(self, seconds: float) -> None:
+        if not self._streaming:
+            return
+        self._thinking_seconds = seconds
+        self._thinking_timer.stop()
+        self._update_thinking()
+
+    def _update_thinking(self) -> None:
+        if not self._streaming or self._thinking_cursor is None:
+            return
+        if self._thinking_seconds is None:
+            text = f"Thinking... {max(0.0, monotonic() - self._thinking_started):.1f}s"
+        else:
+            text = f"Thought for {self._thinking_seconds:.1f}s"
+        cursor = self._thinking_cursor
+        start = cursor.selectionStart()
+        cursor.insertText(text)
+        cursor.setPosition(start, QTextCursor.MoveMode.KeepAnchor)
 
     def feed(self, delta: str) -> None:
         if not self._streaming or not delta:
@@ -82,7 +143,10 @@ class ChatView(QTextBrowser):
             return
         self._flush()
         self._flush_timer.stop()
+        self._thinking_timer.stop()
+        self._thinking_cursor = None
         self._streaming = False
+        self._stream_text = ""
         if conversation is not None:
             self._conversation = conversation
         self._rebuild()
@@ -92,6 +156,7 @@ class ChatView(QTextBrowser):
             return
         text = self._pending
         self._pending = ""
+        self._stream_text += text
         at_bottom = self._at_bottom()
         cursor = self.textCursor()
         cursor.movePosition(QTextCursor.MoveOperation.End)
@@ -118,6 +183,8 @@ class ChatView(QTextBrowser):
         surface = tokens["user_surface"] if is_user else tokens["assistant_surface"]
         accent = tokens["accent"] if is_user else tokens["border_strong"]
         label = _LABELS.get(message.role, message.role.upper())
+        if message.role == "assistant" and message.thinking_seconds is not None:
+            label += f" | Thought for {message.thinking_seconds:.1f}s"
         if is_user:
             body = (
                 f'<p style="margin:0; color:{tokens["text"]}; line-height:150%;">'
@@ -142,4 +209,8 @@ class ChatView(QTextBrowser):
     def _scroll_to_bottom(self) -> None:
         bar = self.verticalScrollBar()
         bar.setValue(bar.maximum())
-        QTimer.singleShot(0, lambda: bar.setValue(bar.maximum()))
+        self._scroll_timer.start(0)
+
+    def _scroll_after_layout(self) -> None:
+        bar = self.verticalScrollBar()
+        bar.setValue(bar.maximum())

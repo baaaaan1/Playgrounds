@@ -8,11 +8,13 @@ from PyQt6.QtWidgets import (
     QLabel,
     QPlainTextEdit,
     QPushButton,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from . import icons
+from . import icons, theme
+from .widgets import ChevronComboBox
 
 
 class ComposerInput(QPlainTextEdit):
@@ -51,6 +53,24 @@ class Composer(QWidget):
         self._hint = QLabel("Enter kirim  \u00b7  Shift+Enter baris baru")
         self._hint.setObjectName("Hint")
 
+        self.profile_combo = ChevronComboBox(theme.icon_color(tokens))
+        self.profile_combo.setMinimumWidth(120)
+        self.profile_combo.setMaximumWidth(220)
+        self.profile_combo.setToolTip("Active connection profile")
+        self.profile_combo.setAccessibleName("Connection profile")
+        self.profile_combo.setPlaceholderText("Choose connection...")
+
+        self.model_combo = ChevronComboBox(theme.icon_color(tokens))
+        self.model_combo.setEditable(False)
+        self.model_combo.setMinimumWidth(160)
+        self.model_combo.setMaximumWidth(320)
+        self.model_combo.setToolTip("Model untuk percakapan ini")
+        self.model_combo.setAccessibleName("Chat model")
+        for combo in (self.profile_combo, self.model_combo):
+            combo.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+            combo.setSizeAdjustPolicy(combo.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(12)
+
         self._send = QPushButton()
         self._send.setObjectName("Send")
         self._send.setFixedSize(36, 36)
@@ -67,9 +87,10 @@ class Composer(QWidget):
         self._stop.hide()
 
         footer = QHBoxLayout()
-        footer.setContentsMargins(12, 0, 8, 8)
+        footer.setContentsMargins(12, 4, 8, 8)
         footer.setSpacing(8)
-        footer.addWidget(self._hint)
+        footer.addWidget(self.profile_combo, 1)
+        footer.addWidget(self.model_combo, 2)
         footer.addStretch(1)
         footer.addWidget(self._send)
         footer.addWidget(self._stop)
@@ -82,7 +103,9 @@ class Composer(QWidget):
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(6)
         outer.addWidget(self._frame)
+        outer.addWidget(self._hint)
 
         self.refresh_icons(self._tokens)
 
@@ -90,6 +113,8 @@ class Composer(QWidget):
         self._tokens = dict(tokens)
         self._send.setIcon(icons.icon("send", tokens["accent_text"], 18))
         self._stop.setIcon(icons.icon("stop", tokens["text"], 16))
+        self.profile_combo.set_chevron_color(theme.icon_color(tokens))
+        self.model_combo.set_chevron_color(theme.icon_color(tokens))
 
     def text(self) -> str:
         return self._input.toPlainText()

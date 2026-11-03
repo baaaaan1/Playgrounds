@@ -3,7 +3,6 @@ from __future__ import annotations
 from PyQt6.QtCore import QPoint, Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QFrame,
-    QHBoxLayout,
     QLabel,
     QListWidget,
     QListWidgetItem,
@@ -28,13 +27,6 @@ class Sidebar(QFrame):
         self.setObjectName("Sidebar")
         self.setMinimumWidth(210)
         self.setMaximumWidth(340)
-
-        header = QHBoxLayout()
-        header.setContentsMargins(10, 0, 6, 0)
-        wordmark = QLabel("playgrounds")
-        wordmark.setObjectName("Wordmark")
-        header.addWidget(wordmark)
-        header.addStretch(1)
 
         self._new_button = QPushButton("  New chat")
         self._new_button.setObjectName("NavButton")
@@ -63,7 +55,6 @@ class Sidebar(QFrame):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(12, 14, 12, 12)
         layout.setSpacing(10)
-        layout.addLayout(header)
         layout.addWidget(self._new_button)
         layout.addSpacing(6)
         layout.addWidget(section)

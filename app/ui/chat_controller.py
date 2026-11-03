@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import logging
+from time import monotonic
 
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from ..core.config import Config
 from ..core.credentials import CredentialStore
 from ..core.models import Conversation, Message
-from ..core.providers.registry import get_provider, provider_info
+from ..core.profiles import endpoint_url
+from ..core.providers.registry import get_provider
 from ..core.store import ConversationStore
 from ..net.client import StreamClient
 
@@ -17,6 +19,7 @@ log = logging.getLogger(__name__)
 class ChatController(QObject):
     message_added = pyqtSignal(object)
     stream_started = pyqtSignal()
+    thinking_finished = pyqtSignal(float)
     stream_delta = pyqtSignal(str)
     stream_finished = pyqtSignal(object)
     error = pyqtSignal(str)
@@ -36,6 +39,8 @@ class ChatController(QObject):
         self._conversation: Conversation | None = None
         self._buffer = ""
         self._busy = False
+        self._thinking_started: float | None = None
+        self._thinking_seconds: float | None = None
 
         self._client.delta.connect(self._on_delta)
         self._client.completed.connect(self._on_completed)
@@ -50,10 +55,10 @@ class ChatController(QObject):
         return self._busy
 
     def new_conversation(self) -> Conversation:
-        provider_id = str(self._config.get("provider", "openai"))
-        info = provider_info(provider_id)
-        model = self._config.model_for(provider_id) or info.default_model
-        self._conversation = Conversation(provider=provider_id, model=model)
+        profile = self._config.active_profile()
+        self._conversation = Conversation(
+            provider=profile.preset, model=profile.model, profile_id=profile.id
+        )
         return self._conversation
 
     def open(self, conversation_id: str) -> bool:
@@ -71,20 +76,14 @@ class ChatController(QObject):
         if not text or self._busy:
             return
 
-        provider_id = str(self._config.get("provider", "openai"))
-        info = provider_info(provider_id)
-        provider = get_provider(provider_id)
-        model = self._config.model_for(provider_id) or info.default_model
-        base_url = self._config.base_url_for(provider_id) or info.base_url
-        api_key = self._credentials.get_secret(provider_id)
-
-        if not base_url and provider_id == "custom":
-            self.error.emit("Base URL belum diatur. Buka Settings untuk mengisinya.")
-            return
-        if info.requires_key and not api_key:
-            self.error.emit(
-                f"API key {info.label} belum diatur. Buka Settings untuk mengisinya."
-            )
+        profile = self._config.active_profile()
+        provider = get_provider(profile.preset)
+        model = profile.model
+        api_key = self._credentials.get_secret(profile.credential_name)
+        try:
+            url = endpoint_url(profile.base_url, "chat/completions")
+        except ValueError as exc:
+            self.error.emit(str(exc))
             return
         if not model:
             self.error.emit("Model belum dipilih. Buka Settings untuk memilih model.")
@@ -94,8 +93,9 @@ class ChatController(QObject):
             self.new_conversation()
         conversation = self._conversation
         assert conversation is not None
-        conversation.provider = provider_id
+        conversation.provider = profile.preset
         conversation.model = model
+        conversation.profile_id = profile.id
 
         user_message = Message(role="user", content=text)
         conversation.add(user_message)
@@ -113,20 +113,22 @@ class ChatController(QObject):
         payload = provider.payload(
             model=model,
             messages=history,
-            temperature=float(self._config.get("temperature", 0.7)),
-            max_tokens=int(self._config.get("max_tokens", 2048)),
-            system_prompt=str(self._config.get("system_prompt", "")),
+            temperature=profile.temperature,
+            max_tokens=profile.max_tokens,
+            system_prompt=profile.system_prompt,
         )
 
         self._buffer = ""
         self._busy = True
+        self._thinking_started = monotonic()
+        self._thinking_seconds = None
+        self.stream_started.emit()
         self._client.start(
-            provider.endpoint(base_url),
+            url,
             provider.headers(api_key),
             payload,
             provider,
         )
-        self.stream_started.emit()
 
     def stop(self) -> None:
         if not self._busy:
@@ -143,10 +145,15 @@ class ChatController(QObject):
         if self._busy:
             self._client.abort()
             self._busy = False
+            self._thinking_started = None
+            self._thinking_seconds = None
 
     def _on_delta(self, delta: str) -> None:
-        if not self._busy:
+        if not self._busy or not delta:
             return
+        if self._thinking_seconds is None and self._thinking_started is not None:
+            self._thinking_seconds = max(0.0, monotonic() - self._thinking_started)
+            self.thinking_finished.emit(self._thinking_seconds)
         self._buffer += delta
         self.stream_delta.emit(delta)
 
@@ -166,10 +173,14 @@ class ChatController(QObject):
         message: Message | None = None
         conversation = self._conversation
         if text and conversation is not None:
-            message = Message(role="assistant", content=text)
+            message = Message(
+                role="assistant", content=text, thinking_seconds=self._thinking_seconds
+            )
             conversation.add(message)
             try:
                 self._store.save(conversation)
             except OSError:
                 log.exception("Failed to save conversation")
+        self._thinking_started = None
+        self._thinking_seconds = None
         self.stream_finished.emit(message)

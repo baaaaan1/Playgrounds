@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QLinearGradient, QPainter
+from PyQt6.QtGui import QColor, QLinearGradient, QPainter
 from PyQt6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+
+from . import icons
 
 _SUGGESTIONS = (
     "Jelaskan cara kerja transformer secara sederhana",
@@ -27,12 +29,8 @@ class _Mark(QWidget):
         painter.setBrush(gradient)
         painter.drawRoundedRect(QRectF(0, 0, 60, 60), 16, 16)
 
-        font = QFont(self.font())
-        font.setPointSizeF(22)
-        font.setWeight(QFont.Weight.DemiBold)
-        painter.setFont(font)
-        painter.setPen(QColor(self._tokens["accent_text"]))
-        painter.drawText(QRectF(0, 0, 60, 60), Qt.AlignmentFlag.AlignCenter, "P")
+        pixmap = icons.icon("brand", self._tokens["accent_text"], 34).pixmap(34, 34)
+        painter.drawPixmap(QRectF(13, 13, 34, 34), pixmap, QRectF(pixmap.rect()))
         painter.end()
 
     def set_tokens(self, tokens: dict[str, str]) -> None:
@@ -49,7 +47,7 @@ class EmptyState(QWidget):
         title = QLabel("Mau eksplorasi apa hari ini?")
         title.setObjectName("EmptyTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle = QLabel("Pilih provider, ketik pesan, dan mulai percakapan.")
+        subtitle = QLabel("Pilih koneksi, ketik pesan, dan mulai percakapan.")
         subtitle.setObjectName("EmptySubtitle")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
 

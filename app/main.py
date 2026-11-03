@@ -3,14 +3,16 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import tempfile
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
 
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication
 
 from .core.config import Config
-from .core.store import default_data_dir
+from .core.store import ConversationStore, default_data_dir
 from .ui import theme
 from .ui.main_window import MainWindow
 
@@ -60,10 +62,12 @@ def main(argv: list[str] | None = None) -> int:
         else:
             del args[index]
 
-    smoke = "--smoke" in args or screenshot is not None
+    native_smoke = "--smoke-native" in args
+    smoke = "--smoke" in args or native_smoke or screenshot is not None
     if smoke:
-        args = [arg for arg in args if arg != "--smoke"]
-        os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+        args = [arg for arg in args if arg not in {"--smoke", "--smoke-native"}]
+        if not native_smoke:
+            os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
     QApplication.setHighDpiScaleFactorRoundingPolicy(
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
@@ -73,9 +77,12 @@ def main(argv: list[str] | None = None) -> int:
     app.setOrganizationName("Playgrounds")
     app.setApplicationDisplayName("Playgrounds")
 
-    _setup_logging()
+    if not smoke:
+        _setup_logging()
 
-    config = Config()
+    temporary = tempfile.TemporaryDirectory(prefix="playgrounds-smoke-") if smoke else None
+    settings = QSettings(str(Path(temporary.name) / "settings.ini"), QSettings.Format.IniFormat) if temporary else None
+    config = Config(settings)
     if forced_theme in {"dark", "light"}:
         config.theme = forced_theme
     theme.apply(app, config.theme)
@@ -85,7 +92,8 @@ def main(argv: list[str] | None = None) -> int:
     font.setPointSizeF(10)
     app.setFont(font)
 
-    window = MainWindow(config)
+    store = ConversationStore(Path(temporary.name) / "conversations") if temporary else None
+    window = MainWindow(config, store=store)
     if demo:
         window.show_demo()
     window.show()
@@ -97,4 +105,9 @@ def main(argv: list[str] | None = None) -> int:
         QTimer.singleShot(600, _capture)
     elif smoke:
         QTimer.singleShot(400, app.quit)
-    return app.exec()
+    result = app.exec()
+    window.close()
+    config.sync()
+    if temporary:
+        temporary.cleanup()
+    return result

@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QVBoxLayout,
@@ -20,7 +21,6 @@ from PyQt6.QtWidgets import (
 from ..core.config import Config
 from ..core.credentials import CredentialStore
 from ..core.models import Conversation
-from ..core.providers.registry import provider_info
 from ..core.store import ConversationStore
 from . import icons, theme
 from .chat_controller import ChatController
@@ -29,17 +29,22 @@ from .composer import Composer
 from .empty_state import EmptyState
 from .settings_dialog import SettingsDialog
 from .sidebar import Sidebar
-from .widgets import ChevronComboBox
+from .window_chrome import FramelessWindowMixin, TitleBar
 
 
-class MainWindow(QMainWindow):
-    def __init__(self, config: Config) -> None:
+class MainWindow(FramelessWindowMixin, QMainWindow):
+    def __init__(
+        self, config: Config, store: ConversationStore | None = None,
+        credentials: CredentialStore | None = None,
+    ) -> None:
         super().__init__()
         self._config = config
         self._tokens = theme.tokens_for(config.theme)
-        self._store = ConversationStore()
-        self._credentials = CredentialStore()
+        self._sidebar_splitter_state = None
+        self._store = store if store is not None else ConversationStore()
+        self._credentials = credentials if credentials is not None else CredentialStore()
         self._controller = ChatController(config, self._store, self._credentials, self)
+        self.setup_frameless_window()
 
         self._banner_timer = QTimer(self)
         self._banner_timer.setSingleShot(True)
@@ -89,6 +94,8 @@ class MainWindow(QMainWindow):
         right_layout.addWidget(self._stack, 1)
 
         self._composer = Composer(self._tokens)
+        self._profile_combo = self._composer.profile_combo
+        self._model_combo = self._composer.model_combo
         composer_wrap = QWidget()
         composer_layout = QVBoxLayout(composer_wrap)
         composer_layout.setContentsMargins(24, 10, 24, 18)
@@ -99,7 +106,21 @@ class MainWindow(QMainWindow):
         self._splitter.setStretchFactor(0, 0)
         self._splitter.setStretchFactor(1, 1)
         self._splitter.setSizes([268, 912])
-        self.setCentralWidget(self._splitter)
+        shell = QFrame()
+        shell.setObjectName("WindowShell")
+        layout = QVBoxLayout(shell)
+        layout.setContentsMargins(1, 1, 1, 1)
+        layout.setSpacing(0)
+        self._title_bar = TitleBar(self, self._tokens)
+        self._sidebar_button = QPushButton()
+        self._sidebar_button.setObjectName("IconButton")
+        self._sidebar_button.setFixedSize(34, 34)
+        self._sidebar_button.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._sidebar_button.setIcon(icons.icon("sidebar", theme.icon_color(self._tokens), 18))
+        self._title_bar.layout().insertWidget(0, self._sidebar_button)
+        layout.addWidget(self._title_bar)
+        layout.addWidget(self._splitter, 1)
+        self.setCentralWidget(shell)
 
     def _build_topbar(self) -> QFrame:
         bar = QFrame()
@@ -108,6 +129,9 @@ class MainWindow(QMainWindow):
 
         self._title = QLabel("New chat")
         self._title.setObjectName("TopTitle")
+        self._title.setTextFormat(Qt.TextFormat.PlainText)
+        self._title.setMinimumWidth(100)
+        self._title.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         self._meta = QLabel("OpenAI")
         self._meta.setObjectName("TopMeta")
 
@@ -116,12 +140,6 @@ class MainWindow(QMainWindow):
         title_box.setContentsMargins(0, 0, 0, 0)
         title_box.addWidget(self._title)
         title_box.addWidget(self._meta)
-
-        self._model_combo = ChevronComboBox(theme.icon_color(self._tokens))
-        self._model_combo.setEditable(True)
-        self._model_combo.setMinimumWidth(200)
-        self._model_combo.setMaximumWidth(320)
-        self._model_combo.setToolTip("Model untuk percakapan ini")
 
         self._theme_button = QPushButton()
         self._theme_button.setObjectName("IconButton")
@@ -133,9 +151,7 @@ class MainWindow(QMainWindow):
         layout = QHBoxLayout(bar)
         layout.setContentsMargins(24, 0, 18, 0)
         layout.setSpacing(12)
-        layout.addLayout(title_box)
-        layout.addStretch(1)
-        layout.addWidget(self._model_combo)
+        layout.addLayout(title_box, 1)
         layout.addWidget(self._theme_button)
         return bar
 
@@ -151,14 +167,18 @@ class MainWindow(QMainWindow):
 
         self._controller.message_added.connect(self._on_message_added)
         self._controller.stream_started.connect(self._on_stream_started)
+        self._controller.thinking_finished.connect(self._chat.set_thinking_time)
         self._controller.stream_delta.connect(self._chat.feed)
         self._controller.stream_finished.connect(self._on_stream_finished)
         self._controller.error.connect(self._on_error)
 
         self._model_combo.currentTextChanged.connect(self._on_model_changed)
+        self._profile_combo.currentIndexChanged.connect(self._on_profile_changed)
         self._theme_button.clicked.connect(self._toggle_theme)
+        self._sidebar_button.clicked.connect(self._toggle_sidebar)
 
         QShortcut(QKeySequence.StandardKey.New, self, activated=self._new_chat)
+        QShortcut(QKeySequence("Ctrl+B"), self, activated=self._toggle_sidebar)
         QShortcut(QKeySequence("Ctrl+,"), self, activated=self._open_settings)
         QShortcut(QKeySequence("Esc"), self, activated=self._controller.stop)
 
@@ -169,8 +189,12 @@ class MainWindow(QMainWindow):
         state = self._config.splitter_state()
         if state is not None:
             self._splitter.restoreState(state)
+        self._set_sidebar_visible(self._config.get("sidebar_visible"))
+        if self._sidebar.isHidden() and state is not None:
+            # Keep the saved sizes until the hidden sidebar is laid out on screen.
+            self._sidebar_splitter_state = state
 
-        self._refresh_provider_ui()
+        self._refresh_connection_ui()
         self._refresh_conversations()
 
         last = str(self._config.get("last_conversation", "") or "")
@@ -180,13 +204,33 @@ class MainWindow(QMainWindow):
             self._show_empty()
             self._composer.focus_input()
 
-    def _refresh_provider_ui(self) -> None:
-        provider_id = str(self._config.get("provider", "openai"))
-        info = provider_info(provider_id)
-        self._meta.setText(info.label)
+    def _toggle_sidebar(self) -> None:
+        self._set_sidebar_visible(self._sidebar.isHidden())
 
-        model = self._config.model_for(provider_id) or info.default_model
-        models = list(info.models)
+    def _set_sidebar_visible(self, visible: bool) -> None:
+        if not visible and not self._sidebar.isHidden():
+            self._sidebar_splitter_state = self._splitter.saveState()
+        self._sidebar.setVisible(visible)
+        if visible and self._sidebar_splitter_state is not None:
+            self._splitter.restoreState(self._sidebar_splitter_state)
+            self._sidebar_splitter_state = None
+        action = "Hide sidebar" if visible else "Show sidebar"
+        self._sidebar_button.setToolTip(f"{action} (Ctrl+B)")
+        self._sidebar_button.setAccessibleName(action)
+        self._config.set("sidebar_visible", visible)
+
+    def _refresh_connection_ui(self) -> None:
+        profile = self._config.active_profile()
+        self._meta.setText(profile.name)
+        self._profile_combo.blockSignals(True)
+        self._profile_combo.clear()
+        for item in self._config.profiles():
+            self._profile_combo.addItem(item.name, item.id)
+        self._profile_combo.setCurrentIndex(self._profile_combo.findData(profile.id))
+        self._profile_combo.blockSignals(False)
+
+        model = profile.model
+        models = list(profile.models)
         if model and model not in models:
             models.insert(0, model)
         if not models:
@@ -198,7 +242,13 @@ class MainWindow(QMainWindow):
         combo.addItems(models)
         combo.setCurrentText(model)
         combo.blockSignals(False)
-        combo.setEnabled(bool(model or info.models))
+        combo.setEnabled(not self._controller.busy)
+
+    def _on_profile_changed(self) -> None:
+        profile_id = self._profile_combo.currentData()
+        if profile_id and not self._controller.busy:
+            self._config.select_profile(str(profile_id))
+            self._refresh_connection_ui()
 
     def _refresh_conversations(self) -> None:
         self._sidebar.set_conversations(self._store.list())
@@ -208,32 +258,43 @@ class MainWindow(QMainWindow):
         self._title.setText("New chat")
 
     def _show_conversation(self, conversation: Conversation) -> None:
-        if conversation.provider and conversation.provider != str(
-            self._config.get("provider", "openai")
-        ):
-            self._config.set("provider", conversation.provider)
-            self._refresh_provider_ui()
+        profiles = self._config.profiles()
+        profile_id = conversation.profile_id or f"legacy-{conversation.provider}"
+        restored = next((p for p in profiles if p.id == profile_id), None)
+        if restored is not None:
+            self._config.select_profile(restored.id)
+            if conversation.model:
+                restored.model = conversation.model
+                self._config.save_profile(restored)
+        self._refresh_connection_ui()
 
         self._chat.show_conversation(conversation)
         self._stack.setCurrentWidget(self._chat)
         self._title.setText(conversation.title or "New chat")
         self._composer.focus_input()
 
-        if conversation.model:
-            self._model_combo.blockSignals(True)
-            self._model_combo.setCurrentText(conversation.model)
-            self._model_combo.blockSignals(False)
-
         self._sidebar.select(conversation.id)
         self._config.set("last_conversation", conversation.id)
         self._hide_banner()
+        if restored is None:
+            self._show_connection_unavailable()
+
+    def _show_connection_unavailable(self) -> None:
+        self._profile_combo.blockSignals(True)
+        self._profile_combo.setCurrentIndex(-1)
+        self._profile_combo.blockSignals(False)
+        self._model_combo.setEnabled(False)
+        self._meta.setText("Connection unavailable")
+        self._on_error("This chat's connection no longer exists. Select a connection before sending.")
 
     def show_demo(self) -> None:
         from ..core.models import Message
 
         conversation = Conversation(title="Cara kerja transformer")
-        conversation.provider = str(self._config.get("provider", "openai"))
-        conversation.model = self._config.model_for(conversation.provider) or "gpt-4o-mini"
+        profile = self._config.active_profile()
+        conversation.provider = profile.preset
+        conversation.profile_id = profile.id
+        conversation.model = profile.model
         conversation.add(
             Message(role="user", content="Jelaskan cara kerja transformer secara sederhana.")
         )
@@ -261,6 +322,7 @@ class MainWindow(QMainWindow):
         if self._controller.busy:
             self._controller.stop()
         self._controller.new_conversation()
+        self._refresh_connection_ui()
         self._chat.clear_chat()
         self._sidebar.clear_selection()
         self._show_empty()
@@ -302,6 +364,9 @@ class MainWindow(QMainWindow):
     def _send(self) -> None:
         if self._controller.busy:
             return
+        if self._profile_combo.currentIndex() < 0:
+            self._on_error("Select a connection before sending this conversation.")
+            return
         text = self._composer.text()
         if not text.strip():
             return
@@ -324,11 +389,15 @@ class MainWindow(QMainWindow):
 
     def _on_stream_started(self) -> None:
         self._composer.set_busy(True)
+        self._profile_combo.setEnabled(False)
+        self._model_combo.setEnabled(False)
         self._hide_banner()
         self._chat.begin_stream()
 
     def _on_stream_finished(self, message) -> None:
         self._composer.set_busy(False)
+        self._profile_combo.setEnabled(True)
+        self._model_combo.setEnabled(True)
         conversation = self._controller.conversation
         self._chat.end_stream(conversation)
         if conversation is not None:
@@ -339,14 +408,14 @@ class MainWindow(QMainWindow):
 
     def _on_model_changed(self, text: str) -> None:
         text = text.strip()
-        if not text:
-            return
-        provider_id = str(self._config.get("provider", "openai"))
-        self._config.set_model_for(provider_id, text)
+        profile = self._config.active_profile()
+        profile.model = text
+        self._config.save_profile(profile)
 
     def _on_error(self, message: str) -> None:
-        self._composer.set_busy(False)
+        self._composer.set_busy(self._controller.busy)
         self._banner.setText(message)
+        self._banner.setTextFormat(Qt.TextFormat.PlainText)
         self._banner_wrap.show()
         self._banner_timer.start()
 
@@ -374,8 +443,9 @@ class MainWindow(QMainWindow):
         self._empty.set_tokens(self._tokens)
         self._composer.refresh_icons(self._tokens)
         self._sidebar.refresh_icons(self._tokens)
-        self._model_combo.set_chevron_color(theme.icon_color(self._tokens))
+        self._sidebar_button.setIcon(icons.icon("sidebar", theme.icon_color(self._tokens), 18))
         self._theme_button.setIcon(icons.icon("theme", theme.icon_color(self._tokens), 18))
+        self._title_bar.refresh_theme(self._tokens)
         self._apply_window_icon()
 
     def _toggle_theme(self) -> None:
@@ -385,18 +455,35 @@ class MainWindow(QMainWindow):
         self._apply_theme(name)
 
     def _open_settings(self) -> None:
-        dialog = SettingsDialog(self._config, self._credentials, self._tokens, self)
-        if dialog.exec() == QDialog.DialogCode.Accepted:
-            self._apply_theme(self._config.theme)
-            self._refresh_provider_ui()
-            self._refresh_conversations()
+        previous_theme = self._config.theme
+        connection_unavailable = self._profile_combo.currentIndex() < 0
+        dialog = SettingsDialog(
+            self._config, self._credentials, self._tokens, self,
+            connections_editable=not self._controller.busy,
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted or dialog.connections_saved:
+            if self._config.theme != previous_theme:
+                self._apply_theme(self._config.theme)
+            if dialog.connections_saved:
+                self._refresh_connection_ui()
+                self._refresh_conversations()
+                conversation = self._controller.conversation
+                profile_ids = {profile.id for profile in self._config.profiles()}
+                missing_profile = conversation is not None and (
+                    conversation.profile_id or f"legacy-{conversation.provider}"
+                ) not in profile_ids
+                if connection_unavailable or missing_profile:
+                    self._show_connection_unavailable()
 
     def closeEvent(self, event) -> None:  # noqa: N802
         conversation = self._controller.conversation
         if conversation is not None:
             self._config.set("last_conversation", conversation.id)
         self._config.set_geometry(self.saveGeometry())
-        self._config.set_splitter_state(self._splitter.saveState())
+        self._config.set_splitter_state(
+            self._sidebar_splitter_state
+            if self._sidebar_splitter_state is not None else self._splitter.saveState()
+        )
         self._config.sync()
         self._controller.shutdown()
         super().closeEvent(event)

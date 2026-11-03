@@ -10,7 +10,7 @@ a = Analysis(
     [os.path.join(ROOT, "run.py")],
     pathex=[ROOT],
     binaries=[],
-    datas=[],
+    datas=[(os.path.join(ROOT, "app", "resources", "line-md"), "app/resources/line-md")],
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},

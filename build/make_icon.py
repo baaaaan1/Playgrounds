@@ -1,70 +1,42 @@
-"""Generate build/app.ico used by PyInstaller and the installer."""
+"""Generate build/app.ico from the locally bundled Material Line brand SVG."""
 
 from __future__ import annotations
 
+import os
 import sys
+from io import BytesIO
 from pathlib import Path
-
-ACCENT = (124, 156, 255)
-ACCENT_DARK = (59, 91, 219)
-TEXT = (11, 16, 32)
-
-
-def _load_font(px: int):
-    from PIL import ImageFont
-
-    for name in ("seguisb.ttf", "segoeuib.ttf", "arialbd.ttf"):
-        try:
-            return ImageFont.truetype(name, px)
-        except OSError:
-            continue
-    return ImageFont.load_default()
-
-
-def _draw(size: int):
-    from PIL import Image, ImageDraw
-
-    scale = 4
-    canvas = size * scale
-    image = Image.new("RGBA", (canvas, canvas), (0, 0, 0, 0))
-
-    gradient = Image.new("RGBA", (canvas, canvas))
-    draw = ImageDraw.Draw(gradient)
-    for y in range(canvas):
-        for_x = y / max(1, canvas - 1)
-        color = tuple(
-            int(ACCENT[i] + (ACCENT_DARK[i] - ACCENT[i]) * for_x) for i in range(3)
-        )
-        draw.line([(0, y), (canvas, y)], fill=(*color, 255))
-
-    mask = Image.new("L", (canvas, canvas), 0)
-    ImageDraw.Draw(mask).rounded_rectangle(
-        [0, 0, canvas - 1, canvas - 1], radius=int(canvas * 0.24), fill=255
-    )
-    image.paste(gradient, (0, 0), mask)
-
-    font = _load_font(int(canvas * 0.56))
-    pen = ImageDraw.Draw(image)
-    box = pen.textbbox((0, 0), "P", font=font)
-    x = (canvas - (box[2] - box[0])) / 2 - box[0]
-    y = (canvas - (box[3] - box[1])) / 2 - box[1]
-    pen.text((x, y), "P", font=font, fill=(*TEXT, 255))
-
-    return image.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def main() -> int:
-    from importlib.util import find_spec
+    # QtSvg rendering needs no display server, including on headless build hosts.
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PIL import Image
+    from PyQt6.QtCore import QBuffer, QIODevice, QRectF, Qt
+    from PyQt6.QtGui import QGuiApplication, QImage, QPainter
+    from PyQt6.QtSvg import QSvgRenderer
 
-    if find_spec("PIL") is None:
-        print("Pillow not installed, skipping icon generation", file=sys.stderr)
-        return 0
+    app = QGuiApplication.instance() or QGuiApplication(sys.argv)
+    source = Path(__file__).resolve().parents[1] / "app/resources/line-md/chat-round-dots.svg"
+    renderer = QSvgRenderer(source.read_bytes().replace(b"currentColor", b"#7c9cff"))
+    if not renderer.isValid():
+        raise RuntimeError(f"Invalid brand SVG: {source}")
 
+    image = QImage(1024, 1024, QImage.Format.Format_ARGB32_Premultiplied)
+    image.fill(Qt.GlobalColor.transparent)
+    painter = QPainter(image)
+    renderer.render(painter, QRectF(0, 0, 1024, 1024))
+    painter.end()
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    if not image.save(buffer, "PNG"):
+        raise RuntimeError("Cannot encode rendered brand icon")
+    sizes = [(size, size) for size in (16, 24, 32, 48, 64, 128, 256)]
     target = Path(__file__).with_name("app.ico")
-    sizes = [16, 24, 32, 48, 64, 128, 256]
-    frames = [_draw(size) for size in sizes]
-    frames[-1].save(target, format="ICO", sizes=[(s, s) for s in sizes])
+    with Image.open(BytesIO(bytes(buffer.data()))) as rendered:
+        rendered.save(target, format="ICO", sizes=sizes)
     print(f"wrote {target}")
+    del app
     return 0
 
 

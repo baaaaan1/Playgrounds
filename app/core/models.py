@@ -22,9 +22,13 @@ class Message:
     role: str
     content: str
     ts: float = field(default_factory=time.time)
+    thinking_seconds: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"role": self.role, "content": self.content, "ts": self.ts}
+        raw = {"role": self.role, "content": self.content, "ts": self.ts}
+        if self.thinking_seconds is not None:
+            raw["thinking_seconds"] = self.thinking_seconds
+        return raw
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> Message:
@@ -32,6 +36,9 @@ class Message:
             role=str(raw.get("role", "user")),
             content=str(raw.get("content", "")),
             ts=float(raw.get("ts", time.time())),
+            thinking_seconds=(
+                float(raw["thinking_seconds"]) if raw.get("thinking_seconds") is not None else None
+            ),
         )
 
 
@@ -44,6 +51,7 @@ class Conversation:
     messages: list[Message] = field(default_factory=list)
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
+    profile_id: str = ""
 
     @property
     def is_empty(self) -> bool:
@@ -61,6 +69,7 @@ class Conversation:
             "title": self.title,
             "provider": self.provider,
             "model": self.model,
+            "profile_id": self.profile_id,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "messages": [m.to_dict() for m in self.messages],
@@ -74,6 +83,7 @@ class Conversation:
             title=str(raw.get("title", "New chat")),
             provider=str(raw.get("provider", "openai")),
             model=str(raw.get("model", "")),
+            profile_id=str(raw.get("profile_id", "")),
             messages=messages,
             created_at=float(raw.get("created_at", time.time())),
             updated_at=float(raw.get("updated_at", time.time())),

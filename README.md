@@ -6,7 +6,8 @@ Desktop AI playground yang ringan: PyQt6, streaming SSE incremental, config via 
 
 - Windows 10/11 x64
 - Python 3.10+
-- (opsional) Pillow untuk generate ikon, WiX v4+ untuk MSI
+- PyQt6 6.7+ (termasuk QtSvg untuk ikon SVG)
+- Dependensi build dari `.[dev]` termasuk Pillow; WiX v4+ hanya untuk MSI
 
 ## Menjalankan
 
@@ -16,40 +17,65 @@ python -m venv .venv
 python -m app
 ```
 
-Buka **Settings** (Ctrl+,), pilih provider, isi API key, lalu mulai chat.
+Buka **Settings** (Ctrl+,), buat koneksi bernama, isi base URL dan API key opsional,
+lalu klik **Fetch models**. Fetch yang berhasil langsung menyimpan profil koneksi tersebut,
+termasuk daftar model, endpoint, dan API key. Filter daftar model, klik model yang diinginkan,
+lalu **Save connection** untuk menyimpan perubahan pilihan. Cancel hanya membuang perubahan
+yang belum disimpan, bukan hasil fetch yang sudah tersimpan. ID model juga bisa diketik manual
+jika endpoint tidak menyediakan `/models`.
+
+Setiap koneksi menyimpan endpoint, daftar model, temperature, max tokens, system prompt,
+dan referensi API key secara terpisah. Beberapa koneksi boleh memakai preset provider
+yang sama. **Use preset** hanya mengisi draft aktif, bukan mengganti konfigurasi koneksi lain.
+Pilih koneksi aktif melalui dropdown di toolbar. Tombol mata menampilkan/menyembunyikan
+teks API key; key selalu disembunyikan kembali saat berganti koneksi atau menutup dialog.
 
 ## Perintah
 
 | Perintah | Fungsi |
 |---|---|
 | `python -m app` | Jalankan aplikasi |
-| `python -m pytest` | Unit test (SSE parser, store, markdown) |
+| `python -m pytest` | Regression test profil, credential, model discovery, UI, SSE, dan store |
 | `python -m ruff check .` | Lint |
 | `powershell -File build\build.ps1` | Build `dist\Playgrounds\` |
 | `powershell -File build\build.ps1 -Installer` | Build exe + `dist\Playgrounds-<versi>-x64.msi` |
 
-Test tanpa membuka window: `python -m app --smoke`.
+Test tanpa membuka window: `python -m app --smoke`. Untuk backend Windows asli:
+`python -m app --smoke-native`. Kedua mode memakai konfigurasi dan percakapan sementara,
+bukan data pengguna. Build menunggu kedua smoke test selesai dan memeriksa exit code.
 
 ## Struktur
 
 ```
 app/
-  core/   models, config (QSettings), credentials (Credential Manager), store (JSON)
-  net/    sse.py (parser incremental), client.py (QNetworkAccessManager)
-  ui/     main_window, chat_view, composer, sidebar, settings, theme
+  core/   models, profiles, config (QSettings), credentials (Credential Manager), store (JSON)
+  net/    sse.py, client.py, models.py (model discovery via QNetworkAccessManager)
+  ui/     main_window, window_chrome, chat_view, composer, sidebar, settings, theme
+  resources/line-md/  Material Line SVG dan lisensi (dibundel offline)
 build/
   playgrounds.spec, version_info.txt, build.ps1, installer/Product.wxs
 tests/
 ```
 
-Menambah provider baru: tambahkan `ProviderInfo` di `app/core/providers/registry.py`; UI dan networking tidak perlu diubah.
+Endpoint OpenAI-compatible baru cukup ditambahkan sebagai koneksi dari UI, tanpa mengubah kode.
+`ProviderInfo` di `app/core/providers/registry.py` hanya menyediakan preset awal.
+Title bar memakai panel minimize/maximize/close kustom; area judul mendukung drag dan
+double-click maximize/restore, serta resize dari tepi jendela.
+
+Semua ikon aplikasi menggunakan **Material Line Icons (line-md)** oleh Vjacheslav Trushkin,
+dari https://icon-sets.iconify.design/line-md/. SVG disertakan lokal dengan animasi dibekukan
+ke frame akhir. Atribusi dan lisensi MIT ada di `app/resources/line-md/LICENSE.txt`.
 
 ## Data pengguna
 
 - Konfigurasi: `QSettings("Playgrounds", "Playgrounds")` (registry HKCU)
 - Percakapan: `%APPDATA%\Playgrounds\conversations\*.json`
 - Log: `%APPDATA%\Playgrounds\logs\playgrounds.log`
-- API key: Windows Credential Manager, target `Playgrounds/<provider-id>`
+- API key koneksi baru: Windows Credential Manager, target `Playgrounds/profile/<profile-id>`
+
+Konfigurasi provider lama dimigrasikan otomatis menjadi profil koneksi. Referensi credential
+lama (`Playgrounds/<provider-id>`) tetap dipakai agar key tidak perlu dimasukkan ulang.
+API key tidak disimpan dalam QSettings atau file percakapan.
 
 ## Installer (tahap akhir)
 

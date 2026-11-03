@@ -25,6 +25,9 @@ TOKENS: dict[str, dict[str, str]] = {
         "code_text": "#c8d6ff",
         "danger": "#ff7f7f",
         "success": "#5ad1a3",
+        "settings_control_border": "#69758a",
+        "settings_success": "#5ad1a3",
+        "settings_error": "#ff7f7f",
     },
     "light": {
         "bg": "#f6f7fa",
@@ -46,6 +49,9 @@ TOKENS: dict[str, dict[str, str]] = {
         "code_text": "#1f2a4a",
         "danger": "#d64545",
         "success": "#1f9d6f",
+        "settings_control_border": "#7b8494",
+        "settings_success": "#18794e",
+        "settings_error": "#b42318",
     },
 }
 
@@ -58,6 +64,62 @@ _QSS = """
 
 QMainWindow, QDialog, QWidget#Root {
     background-color: @bg;
+}
+
+QFrame#WindowShell {
+    background-color: @bg;
+    border: 1px solid @border_strong;
+}
+
+QWidget#WindowTitleBar {
+    background-color: @bg_alt;
+    border-bottom: 1px solid @border;
+}
+
+QLabel#WindowTitle {
+    color: @text;
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+}
+
+QWidget#WindowTitleBar[active="false"] {
+    background-color: @bg;
+}
+
+QLabel#WindowTitle[active="false"] {
+    color: @text_faint;
+}
+
+QWidget#WindowControls {
+    background: transparent;
+}
+
+QToolButton[windowControl="true"] {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    padding: 0;
+}
+
+QToolButton[windowControl="true"]:hover {
+    background-color: @surface_hover;
+}
+
+QToolButton[windowControl="true"]:pressed {
+    background-color: @surface_active;
+}
+
+QToolButton[windowControl="true"]:focus {
+    border-bottom: 2px solid @accent;
+}
+
+QToolButton#WindowClose:hover {
+    background-color: #c43d49;
+}
+
+QToolButton#WindowClose:pressed {
+    background-color: #a22f3a;
 }
 
 QLabel {
@@ -141,6 +203,33 @@ QPlainTextEdit#ComposerInput {
     padding: 10px 12px;
     selection-background-color: @accent;
     selection-color: @accent_text;
+}
+
+QFrame#Composer QComboBox {
+    background-color: @bg_alt;
+    border: 1px solid transparent;
+    padding: 4px 26px 4px 8px;
+    font-size: 11px;
+}
+
+QFrame#Composer QComboBox:hover {
+    background-color: @surface_hover;
+    border-color: @border_strong;
+}
+
+QFrame#Composer QComboBox:focus {
+    border-color: @accent;
+}
+
+QFrame#Composer QComboBox:disabled {
+    color: @text_faint;
+}
+
+QFrame#Composer QComboBox QLineEdit {
+    background: transparent;
+    border: none;
+    padding: 0;
+    font-size: 11px;
 }
 
 QPlainTextEdit#Prompt, QPlainTextEdit#SystemPrompt {
@@ -262,6 +351,29 @@ QListWidget#Navigation::item:hover {
 QListWidget#Navigation::item:selected {
     background-color: @surface_active;
     color: @text;
+}
+
+QListWidget#ModelList {
+    background-color: @surface;
+    border: 1px solid @border;
+    border-radius: 8px;
+    color: @text;
+    outline: none;
+    padding: 4px;
+}
+
+QListWidget#ModelList::item {
+    padding: 7px 10px;
+    border-radius: 5px;
+}
+
+QListWidget#ModelList::item:hover {
+    background-color: @surface_hover;
+}
+
+QListWidget#ModelList::item:selected {
+    background-color: @surface_active;
+    color: @accent;
 }
 
 QTextBrowser {
@@ -391,6 +503,140 @@ QMessageBox {
 QScrollArea {
     background: transparent;
     border: none;
+}
+
+/* Settings use larger type and explicit boundaries without changing chat density. */
+QDialog#SettingsDialog QWidget {
+    font-size: 11pt;
+}
+
+QDialog#SettingsDialog QWidget#SettingsEditor {
+    background-color: @bg;
+}
+
+QDialog#SettingsDialog QLabel#SettingsTitle {
+    font-size: 20pt;
+    font-weight: 600;
+}
+
+QDialog#SettingsDialog QLabel#SettingsHelp {
+    color: @text_muted;
+    font-size: 10pt;
+}
+
+QDialog#SettingsDialog QLabel#SettingsFieldError {
+    color: @settings_error;
+    font-size: 10pt;
+}
+
+QDialog#SettingsDialog QGroupBox {
+    color: @text;
+    border: none;
+    border-top: 1px solid @border_strong;
+    margin-top: 12px;
+    padding-top: 20px;
+    font-size: 12pt;
+    font-weight: 600;
+}
+
+QDialog#SettingsDialog QGroupBox::title {
+    subcontrol-origin: margin;
+    subcontrol-position: top left;
+    padding-right: 10px;
+    background-color: @bg;
+}
+
+QDialog#SettingsDialog QPushButton {
+    min-height: 24px;
+    border: 1px solid @settings_control_border;
+}
+
+QDialog#SettingsDialog QPushButton#SettingsTab {
+    border: 1px solid transparent;
+    color: @text_muted;
+    padding: 8px 16px;
+}
+
+QDialog#SettingsDialog QPushButton#SettingsTab:checked {
+    color: @text;
+    background-color: @surface_active;
+    border-bottom: 3px solid @accent;
+    font-weight: 600;
+}
+
+QDialog#SettingsDialog QComboBox,
+QDialog#SettingsDialog QLineEdit,
+QDialog#SettingsDialog QSpinBox,
+QDialog#SettingsDialog QDoubleSpinBox,
+QDialog#SettingsDialog QPlainTextEdit,
+QDialog#SettingsDialog QListWidget#ModelList {
+    border: 1px solid @settings_control_border;
+}
+
+QDialog#SettingsDialog QComboBox,
+QDialog#SettingsDialog QLineEdit,
+QDialog#SettingsDialog QSpinBox,
+QDialog#SettingsDialog QDoubleSpinBox {
+    min-height: 24px;
+}
+
+QDialog#SettingsDialog QCheckBox,
+QDialog#SettingsDialog QRadioButton {
+    color: @text;
+    min-height: 32px;
+    spacing: 10px;
+}
+
+QDialog#SettingsDialog QCheckBox::indicator,
+QDialog#SettingsDialog QRadioButton::indicator,
+QDialog#SettingsDialog QGroupBox::indicator {
+    width: 18px;
+    height: 18px;
+}
+
+QDialog#SettingsDialog QPushButton:focus,
+QDialog#SettingsDialog QComboBox:focus,
+QDialog#SettingsDialog QLineEdit:focus,
+QDialog#SettingsDialog QSpinBox:focus,
+QDialog#SettingsDialog QDoubleSpinBox:focus,
+QDialog#SettingsDialog QPlainTextEdit:focus,
+QDialog#SettingsDialog QListWidget#ModelList:focus {
+    border: 2px solid @accent;
+}
+
+QDialog#SettingsDialog QCheckBox:focus,
+QDialog#SettingsDialog QRadioButton:focus,
+QDialog#SettingsDialog QGroupBox:focus {
+    outline: 2px solid @accent;
+}
+
+QDialog#SettingsDialog QLabel#SettingsStatus {
+    color: @text_muted;
+    background-color: @surface;
+    border: 1px solid @settings_control_border;
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 10pt;
+}
+
+QDialog#SettingsDialog QLabel#SettingsStatus[status="error"] {
+    color: @settings_error;
+    border-color: @settings_error;
+}
+
+QDialog#SettingsDialog QLabel#SettingsStatus[status="success"] {
+    color: @settings_success;
+    border-color: @settings_success;
+}
+
+QDialog#SettingsDialog QProgressBar {
+    border: none;
+    background-color: @surface_active;
+    max-height: 4px;
+}
+
+QDialog#SettingsDialog QProgressBar::chunk {
+    background-color: @accent;
 }
 """
 
