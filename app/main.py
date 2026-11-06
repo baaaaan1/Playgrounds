@@ -11,9 +11,11 @@ from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QApplication
 
+from . import __version__
 from .core.config import Config
 from .core.store import ConversationStore, default_data_dir
-from .ui import theme
+from .i18n import initialize_english
+from .ui import icons, theme
 from .ui.main_window import MainWindow
 
 log = logging.getLogger(__name__)
@@ -73,9 +75,12 @@ def main(argv: list[str] | None = None) -> int:
         Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
     )
     app = QApplication(args)
+    initialize_english(app)
     app.setApplicationName("Playgrounds")
+    app.setApplicationVersion(__version__)
     app.setOrganizationName("Playgrounds")
     app.setApplicationDisplayName("Playgrounds")
+    app.setWindowIcon(icons.app_icon())
 
     if not smoke:
         _setup_logging()
@@ -83,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
     temporary = tempfile.TemporaryDirectory(prefix="playgrounds-smoke-") if smoke else None
     settings = QSettings(str(Path(temporary.name) / "settings.ini"), QSettings.Format.IniFormat) if temporary else None
     config = Config(settings)
+    if smoke:
+        config.set("updates/automatic", False)
     if forced_theme in {"dark", "light"}:
         config.theme = forced_theme
     theme.apply(app, config.theme)

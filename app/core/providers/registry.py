@@ -32,12 +32,12 @@ PROVIDERS: tuple[ProviderInfo, ...] = (
     ),
     ProviderInfo(
         id="ollama",
-        label="Ollama (lokal)",
+        label="Ollama (local)",
         base_url="http://localhost:11434/v1",
         default_model="llama3.2",
         models=("llama3.2", "qwen2.5", "mistral", "phi4"),
         requires_key=False,
-        hint="Jalankan ollama serve terlebih dahulu",
+        hint="Run ollama serve first",
     ),
     ProviderInfo(
         id="custom",
@@ -46,7 +46,7 @@ PROVIDERS: tuple[ProviderInfo, ...] = (
         default_model="",
         models=(),
         requires_key=False,
-        hint="API key opsional; isi base URL, mis. https://host/v1",
+        hint="API key is optional; enter a base URL, e.g. https://host/v1",
     ),
 )
 

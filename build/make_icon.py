@@ -1,4 +1,4 @@
-"""Generate build/app.ico from the locally bundled Material Line brand SVG."""
+"""Generate build/app.ico from build/icon.svg."""
 
 from __future__ import annotations
 
@@ -17,8 +17,8 @@ def main() -> int:
     from PyQt6.QtSvg import QSvgRenderer
 
     app = QGuiApplication.instance() or QGuiApplication(sys.argv)
-    source = Path(__file__).resolve().parents[1] / "app/resources/line-md/chat-round-dots.svg"
-    renderer = QSvgRenderer(source.read_bytes().replace(b"currentColor", b"#7c9cff"))
+    source = Path(__file__).with_name("icon.svg")
+    renderer = QSvgRenderer(source.read_bytes())
     if not renderer.isValid():
         raise RuntimeError(f"Invalid brand SVG: {source}")
 

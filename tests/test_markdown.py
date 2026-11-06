@@ -1,16 +1,9 @@
 from __future__ import annotations
 
 from app.ui.markdown import render_markdown
+from app.ui.theme import tokens_for
 
-TOKENS = {
-    "text": "#ffffff",
-    "text_muted": "#888888",
-    "accent": "#7c9cff",
-    "code_bg": "#101010",
-    "code_text": "#cccccc",
-    "border": "#222222",
-    "border_strong": "#333333",
-}
+TOKENS = tokens_for("dark")
 
 
 def test_plain_paragraph() -> None:
@@ -46,8 +39,12 @@ def test_unordered_list() -> None:
 
 
 def test_link() -> None:
-    html = render_markdown("[situs](https://example.com)", TOKENS)
-    assert 'href="https://example.com"' in html
+    for name in ("dark", "light"):
+        tokens = tokens_for(name)
+        html = render_markdown("[situs](https://example.com)", tokens)
+        assert 'href="https://example.com"' in html
+        assert f'color:{tokens["accent_strong"]}' in html
+        assert "text-decoration:underline" in html
 
 
 def test_heading() -> None:

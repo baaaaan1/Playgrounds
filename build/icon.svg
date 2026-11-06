@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <title>Playgrounds — Pixel Mosaic</title>
+  <desc>Abstract, horizontally mirrored pixel identicon in coral on charcoal.</desc>
+  <rect width="512" height="512" rx="108" fill="#17191E"/>
+  <g fill="#FF896A">
+    <rect x="182" y="78" width="44" height="44" rx="6"/>
+    <rect x="286" y="78" width="44" height="44" rx="6"/>
+    <rect x="130" y="130" width="44" height="44" rx="6"/>
+    <rect x="182" y="130" width="44" height="44" rx="6"/>
+    <rect x="286" y="130" width="44" height="44" rx="6"/>
+    <rect x="338" y="130" width="44" height="44" rx="6"/>
+    <rect x="78" y="182" width="44" height="44" rx="6"/>
+    <rect x="130" y="182" width="44" height="44" rx="6"/>
+    <rect x="234" y="182" width="44" height="44" rx="6"/>
+    <rect x="338" y="182" width="44" height="44" rx="6"/>
+    <rect x="390" y="182" width="44" height="44" rx="6"/>
+    <rect x="78" y="234" width="44" height="44" rx="6"/>
+    <rect x="182" y="234" width="44" height="44" rx="6"/>
+    <rect x="234" y="234" width="44" height="44" rx="6"/>
+    <rect x="286" y="234" width="44" height="44" rx="6"/>
+    <rect x="390" y="234" width="44" height="44" rx="6"/>
+    <rect x="78" y="286" width="44" height="44" rx="6"/>
+    <rect x="130" y="286" width="44" height="44" rx="6"/>
+    <rect x="182" y="286" width="44" height="44" rx="6"/>
+    <rect x="286" y="286" width="44" height="44" rx="6"/>
+    <rect x="338" y="286" width="44" height="44" rx="6"/>
+    <rect x="390" y="286" width="44" height="44" rx="6"/>
+    <rect x="130" y="338" width="44" height="44" rx="6"/>
+    <rect x="182" y="338" width="44" height="44" rx="6"/>
+    <rect x="286" y="338" width="44" height="44" rx="6"/>
+    <rect x="338" y="338" width="44" height="44" rx="6"/>
+    <rect x="182" y="390" width="44" height="44" rx="6"/>
+    <rect x="286" y="390" width="44" height="44" rx="6"/>
+  </g>
+</svg>

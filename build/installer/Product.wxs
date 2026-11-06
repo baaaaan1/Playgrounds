@@ -12,7 +12,7 @@
         Description="Playgrounds AI Playground"
         Manufacturer="Playgrounds" />
 
-    <MajorUpgrade DowngradeErrorMessage="Versi Playgrounds yang lebih baru sudah terpasang." />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of Playgrounds is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="LocalAppDataFolder">

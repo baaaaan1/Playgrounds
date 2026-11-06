@@ -1,58 +1,56 @@
 from __future__ import annotations
 
-from PyQt6.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt6.QtGui import QColor, QLinearGradient, QPainter
-from PyQt6.QtWidgets import QLabel, QPushButton, QVBoxLayout, QWidget
+from PyQt6.QtCore import Qt, pyqtSignal
+from PyQt6.QtGui import QPainter
+from PyQt6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from . import icons
 
-_SUGGESTIONS = (
-    "Jelaskan cara kerja transformer secara sederhana",
-    "Buat skrip Python untuk merapikan nama file",
-    "Ringkas teks ini menjadi 5 poin penting",
-)
-
 
 class _Mark(QWidget):
-    def __init__(self, tokens: dict[str, str], parent=None) -> None:
+    def __init__(self, parent=None) -> None:
         super().__init__(parent)
-        self._tokens = dict(tokens)
-        self.setFixedSize(60, 60)
+        self.setFixedSize(64, 64)
 
     def paintEvent(self, event) -> None:  # noqa: N802
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        gradient = QLinearGradient(QPointF(0, 0), QPointF(60, 60))
-        gradient.setColorAt(0.0, QColor(self._tokens["accent"]))
-        gradient.setColorAt(1.0, QColor(self._tokens["accent_hover"]))
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(gradient)
-        painter.drawRoundedRect(QRectF(0, 0, 60, 60), 16, 16)
-
-        pixmap = icons.icon("brand", self._tokens["accent_text"], 34).pixmap(34, 34)
-        painter.drawPixmap(QRectF(13, 13, 34, 34), pixmap, QRectF(pixmap.rect()))
+        icons.app_icon().paint(painter, self.rect())
         painter.end()
 
-    def set_tokens(self, tokens: dict[str, str]) -> None:
-        self._tokens = dict(tokens)
-        self.update()
 
-
-class EmptyState(QWidget):
+class EmptyState(QScrollArea):
     suggestion_chosen = pyqtSignal(str)
 
     def __init__(self, tokens: dict[str, str], parent=None) -> None:
         super().__init__(parent)
-        self._mark = _Mark(tokens)
-        title = QLabel("Mau eksplorasi apa hari ini?")
+        self.setObjectName("EmptyState")
+        self.setWidgetResizable(True)
+        self.setFrameShape(QFrame.Shape.NoFrame)
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        content = QWidget()
+        content.setObjectName("EmptyContent")
+        self.setWidget(content)
+        self._mark = _Mark()
+        title = QLabel(self.tr("What would you like to explore today?"))
         title.setObjectName("EmptyTitle")
         title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        subtitle = QLabel("Pilih koneksi, ketik pesan, dan mulai percakapan.")
+        title.setWordWrap(True)
+        subtitle = QLabel(self.tr("Choose a connection, type a message, and start a chat."))
         subtitle.setObjectName("EmptySubtitle")
         subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        subtitle.setWordWrap(True)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(40, 40, 40, 40)
+        layout = QVBoxLayout(content)
+        layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(10)
         layout.addStretch(1)
         layout.addWidget(self._mark, 0, Qt.AlignmentFlag.AlignHCenter)
@@ -61,15 +59,32 @@ class EmptyState(QWidget):
         layout.addWidget(subtitle)
         layout.addSpacing(18)
 
-        for text in _SUGGESTIONS:
-            button = QPushButton(text)
+        for text in (
+            self.tr("Explain how transformers work in simple terms"),
+            self.tr("Write a Python script to tidy up file names"),
+            self.tr("Summarize this text in 5 key points"),
+        ):
+            button = QPushButton()
             button.setObjectName("Suggestion")
+            button.setAccessibleName(text)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.setMaximumWidth(460)
+            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+            label = QLabel(text)
+            label.setWordWrap(True)
+            label.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            button_layout = QVBoxLayout(button)
+            button_layout.setContentsMargins(14, 10, 14, 10)
+            button_layout.addWidget(label)
             button.clicked.connect(lambda _checked=False, t=text: self.suggestion_chosen.emit(t))
-            layout.addWidget(button, 0, Qt.AlignmentFlag.AlignHCenter)
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            row.addStretch()
+            row.addWidget(button, 1)
+            row.addStretch()
+            layout.addLayout(row)
 
         layout.addStretch(2)
 
     def set_tokens(self, tokens: dict[str, str]) -> None:
-        self._mark.set_tokens(tokens)
+        self._mark.update()

@@ -4,28 +4,13 @@ import json
 import logging
 from typing import Any
 
-from PyQt6.QtCore import QObject, QUrl, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QObject, QUrl, pyqtSignal
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 from ..core.providers.base import Provider
 from .sse import SSEEvent, SSEParser
 
 log = logging.getLogger(__name__)
-
-_STATUS_HINTS = {
-    400: "Permintaan ditolak server",
-    401: "API key tidak valid atau belum diatur",
-    402: "Kuota/kredit provider habis",
-    403: "Akses ditolak untuk model atau key ini",
-    404: "Endpoint atau model tidak ditemukan",
-    408: "Server timeout",
-    413: "Konteks percakapan terlalu panjang",
-    429: "Rate limit tercapai, coba lagi sebentar",
-    500: "Server provider error",
-    502: "Bad gateway dari provider",
-    503: "Layanan provider tidak tersedia",
-    504: "Gateway timeout dari provider",
-}
 
 
 def error_message(body: bytes) -> str:
@@ -44,9 +29,10 @@ def error_message(body: bytes) -> str:
                 return message[:300]
         if isinstance(error, str):
             return error[:300]
-        message = payload.get("message")
-        if isinstance(message, str):
-            return message[:300]
+        for name in ("message", "detail", "title"):
+            message = payload.get(name)
+            if isinstance(message, str) and message.strip():
+                return message[:300]
     return text[:200]
 
 
@@ -54,6 +40,7 @@ class StreamClient(QObject):
     """Streams chat completions over SSE using QNetworkAccessManager."""
 
     delta = pyqtSignal(str)
+    usage = pyqtSignal(object)
     completed = pyqtSignal()
     failed = pyqtSignal(str)
 
@@ -65,6 +52,7 @@ class StreamClient(QObject):
         self._provider: Provider | None = None
         self._error_body = bytearray()
         self._done = False
+        self._stream_error = ""
 
     @property
     def busy(self) -> bool:
@@ -82,6 +70,7 @@ class StreamClient(QObject):
         self._parser = SSEParser()
         self._error_body = bytearray()
         self._done = False
+        self._stream_error = ""
 
         request = QNetworkRequest(QUrl(url))
         request.setRawHeader(b"Accept", b"text/event-stream")
@@ -115,7 +104,7 @@ class StreamClient(QObject):
 
     def _on_ready_read(self) -> None:
         reply = self._reply
-        if reply is None:
+        if reply is None or (self.sender() is not None and self.sender() is not reply):
             return
         status = reply.attribute(QNetworkRequest.Attribute.HttpStatusCodeAttribute)
         chunk = bytes(reply.readAll())
@@ -126,6 +115,10 @@ class StreamClient(QObject):
             return
         for event in self._parser.feed(chunk):
             self._handle_event(event)
+        if self._stream_error:
+            message = self._stream_error
+            self.abort()
+            self.failed.emit(message)
 
     def _handle_event(self, event: SSEEvent) -> None:
         data = event.data.strip()
@@ -136,13 +129,35 @@ class StreamClient(QObject):
             return
         if self._provider is None:
             return
+        try:
+            payload = json.loads(data)
+        except ValueError:
+            payload = None
+        if event.event == "error" or (isinstance(payload, dict) and payload.get("error")):
+            self._stream_error = error_message(data.encode("utf-8")) or self.tr("The provider could not complete the response.")
+            self._done = True
+            return
+        if not isinstance(payload, dict):
+            return
+        usage = payload.get("usage")
+        if isinstance(usage, dict):
+            counts = {}
+            for source, target in (
+                ("prompt_tokens", "input_tokens"), ("completion_tokens", "output_tokens"),
+                ("input_tokens", "input_tokens"), ("output_tokens", "output_tokens"),
+            ):
+                value = usage.get(source)
+                if type(value) is int and value >= 0:
+                    counts[target] = value
+            if counts:
+                self.usage.emit(counts)
         delta = self._provider.parse_delta(data)
         if delta:
             self.delta.emit(delta)
 
     def _on_finished(self) -> None:
         reply = self._reply
-        if reply is None:
+        if reply is None or (self.sender() is not None and self.sender() is not reply):
             return
         self._reply = None
         try:
@@ -161,9 +176,13 @@ class StreamClient(QObject):
             else:
                 for event in self._parser.feed(tail):
                     self._handle_event(event)
-                for event in self._parser.flush():
-                    self._handle_event(event)
+        if status_code is None or status_code < 400:
+            for event in self._parser.flush():
+                self._handle_event(event)
 
+        if self._stream_error:
+            self.failed.emit(self._stream_error)
+            return
         if status_code is not None and status_code >= 400:
             self.failed.emit(self._describe_http(status_code, bytes(self._error_body)))
             return
@@ -174,21 +193,59 @@ class StreamClient(QObject):
 
     @staticmethod
     def _describe_http(status: int, body: bytes) -> str:
-        hint = _STATUS_HINTS.get(status, f"HTTP {status}")
         detail = error_message(body)
-        return f"{hint}: {detail}" if detail else hint
+        if (status == 404 and detail.casefold().startswith("function ")
+                and "not found for account" in detail.casefold()):
+            return QCoreApplication.translate(
+                "StreamClient", "The provider's model deployment is unavailable for this API account. "
+                "The model may be retired or access may be restricted. Choose another model or check "
+                "access with the provider. Provider detail: {detail}",
+            ).format(detail=detail)
+        hints = {
+            400: QCoreApplication.translate("StreamClient", "The server rejected the request"),
+            401: QCoreApplication.translate("StreamClient", "The API key is invalid or not set"),
+            402: QCoreApplication.translate("StreamClient", "The provider's quota or credits are exhausted"),
+            403: QCoreApplication.translate("StreamClient", "Access denied for this model or API key"),
+            404: QCoreApplication.translate(
+                "StreamClient", "Endpoint or model not found. Check the base URL and choose a model "
+                "available on this connection in Settings",
+            ),
+            408: QCoreApplication.translate("StreamClient", "The server timed out"),
+            413: QCoreApplication.translate("StreamClient", "The conversation context is too long"),
+            429: QCoreApplication.translate("StreamClient", "Rate limit reached. Please try again shortly"),
+            500: QCoreApplication.translate("StreamClient", "Provider server error"),
+            502: QCoreApplication.translate("StreamClient", "Bad gateway from the provider"),
+            503: QCoreApplication.translate("StreamClient", "The provider's service is unavailable"),
+            504: QCoreApplication.translate("StreamClient", "The provider's gateway timed out"),
+        }
+        hint = hints.get(status)
+        if hint is None:
+            hint = QCoreApplication.translate("StreamClient", "HTTP {status}").format(status=status)
+        if not detail:
+            return hint
+        return QCoreApplication.translate("StreamClient", "{hint}: {detail}").format(
+            hint=hint, detail=detail,
+        )
 
     @staticmethod
     def _describe_network(error: QNetworkReply.NetworkError, message: str) -> str:
         if error == QNetworkReply.NetworkError.HostNotFoundError:
-            return "Host tidak ditemukan. Periksa base URL dan koneksi internet."
+            return QCoreApplication.translate(
+                "StreamClient", "Host not found. Check the base URL and your internet connection.",
+            )
         if error == QNetworkReply.NetworkError.ConnectionRefusedError:
-            return "Koneksi ditolak. Pastikan server lokal berjalan."
+            return QCoreApplication.translate(
+                "StreamClient", "Connection refused. Make sure the local server is running.",
+            )
         if error in (
             QNetworkReply.NetworkError.TimeoutError,
             QNetworkReply.NetworkError.OperationCanceledError,
         ):
-            return "Permintaan timeout. Coba lagi."
+            return QCoreApplication.translate("StreamClient", "The request timed out. Please try again.")
         if error == QNetworkReply.NetworkError.SslHandshakeFailedError:
-            return "TLS handshake gagal. Periksa sertifikat endpoint."
-        return f"Koneksi gagal: {message or 'unknown error'}"
+            return QCoreApplication.translate(
+                "StreamClient", "TLS handshake failed. Check the endpoint's certificate.",
+            )
+        return QCoreApplication.translate("StreamClient", "Connection failed: {detail}").format(
+            detail=message or QCoreApplication.translate("StreamClient", "Unknown error"),
+        )

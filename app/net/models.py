@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from PyQt6.QtCore import QObject, QUrl, pyqtSignal
+from PyQt6.QtCore import QCoreApplication, QObject, QUrl, pyqtSignal
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 
 from ..core.profiles import endpoint_url
@@ -12,7 +12,9 @@ from .client import error_message
 def parse_models(body: bytes) -> list[str]:
     payload = json.loads(body)
     if not isinstance(payload, dict) or not isinstance(payload.get("data"), list):
-        raise ValueError("Expected an OpenAI-compatible model list: {data: [{id: ...}]}.")
+        raise ValueError(QCoreApplication.translate(
+            "ModelDiscovery", "Expected an OpenAI-compatible model list: {data: [{id: ...}]}.",
+        ))
     return sorted({
         item["id"].strip() for item in payload["data"]
         if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip()
@@ -68,7 +70,7 @@ class ModelDiscovery(QObject):
         self._body.extend(bytes(self._reply.readAll()))
         if len(self._body) > 4 * 1024 * 1024:
             self.cancel()
-            self.failed.emit("Model list exceeds the 4 MB limit.")
+            self.failed.emit(self.tr("Model list exceeds the 4 MB limit."))
 
     def _finished(self) -> None:
         self._read()
@@ -80,14 +82,16 @@ class ModelDiscovery(QObject):
         reason = reply.errorString()
         reply.deleteLater()
         if status is not None and 300 <= int(status) < 400:
-            self.failed.emit("Endpoint redirected. Set its final base URL before fetching models.")
+            self.failed.emit(self.tr("Endpoint redirected. Set its final base URL before fetching models."))
         elif error != QNetworkReply.NetworkError.NoError or status != 200:
             detail = error_message(bytes(self._body)) or reason
-            self.failed.emit(f"Could not fetch models (HTTP {status or 'n/a'}): {detail}")
+            self.failed.emit(self.tr("Could not fetch models (HTTP {status}): {detail}").format(
+                status=status or self.tr("n/a"), detail=detail,
+            ))
         else:
             try:
                 models = parse_models(bytes(self._body))
             except (ValueError, UnicodeError) as exc:
-                self.failed.emit(f"Invalid model list: {exc}")
+                self.failed.emit(self.tr("Invalid model list: {detail}").format(detail=exc))
             else:
                 self.models_ready.emit(models)

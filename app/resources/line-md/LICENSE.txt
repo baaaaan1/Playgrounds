@@ -10,7 +10,7 @@ and offsets have been removed. Original geometry and currentColor are retained.
 
 Application mappings:
 plus -> plus; send -> arrow-up; stop/maximize -> square; sliders -> cog;
-trash -> trash; theme -> sunny; copy/restore -> text-box-multiple;
+trash -> trash; theme -> sunny; restore -> text-box-multiple;
 check -> confirm; close -> close; eye -> watch; eye-off -> watch-off;
 refresh -> rotate-270; save -> download-outline; minimize -> minus;
 chevron-down -> chevron-down; brand -> chat-round-dots.

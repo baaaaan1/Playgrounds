@@ -8,6 +8,12 @@ from PyQt6.QtGui import QColor, QIcon, QPainter, QPixmap
 from PyQt6.QtSvg import QSvgRenderer
 
 _ASSETS = Path(__file__).resolve().parents[1] / "resources" / "line-md"
+_APP_ICON = Path(__file__).resolve().parents[2] / "build" / "icon.svg"
+_MATERIAL_SYMBOLS = {
+    "edit": "edit-outline",
+    "regenerate": "refresh",
+    "copy": "content-copy-outline",
+}
 _NAMES = {
     "plus": "plus",
     "send": "arrow-up",
@@ -15,7 +21,6 @@ _NAMES = {
     "sliders": "cog",
     "trash": "trash",
     "theme": "sunny",
-    "copy": "text-box-multiple",
     "check": "confirm",
     "close": "close",
     "eye": "watch",
@@ -27,13 +32,14 @@ _NAMES = {
     "restore": "text-box-multiple",
     "chevron-down": "chevron-down",
     "sidebar": "sidebar",
-    "brand": "chat-round-dots",
 }
 
 
 @lru_cache(maxsize=32)
 def _svg(name: str) -> bytes:
     # Fail explicitly rather than silently substituting an unrelated glyph.
+    if name in _MATERIAL_SYMBOLS:
+        return (_ASSETS.parent / "material-symbols" / f"{_MATERIAL_SYMBOLS[name]}.svg").read_bytes()
     return (_ASSETS / f"{_NAMES[name]}.svg").read_bytes()
 
 
@@ -46,7 +52,7 @@ def _paint(name: str, color: str, size: int) -> QPixmap:
     svg = _svg(name).replace(b"currentColor", tint.name().encode("ascii"))
     renderer = QSvgRenderer(svg)
     if not renderer.isValid():
-        raise ValueError(f"Invalid bundled line-md SVG: {name}")
+        raise ValueError(f"Invalid bundled SVG: {name}")
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
     painter = QPainter(pixmap)
@@ -58,7 +64,7 @@ def _paint(name: str, color: str, size: int) -> QPixmap:
 
 @lru_cache(maxsize=256)
 def icon(name: str, color: str, size: int = 18) -> QIcon:
-    """A local, static Material Line icon with 1x/2x/3x raster variants."""
+    """A bundled SVG icon with theme tinting and 1x/2x/3x raster variants."""
     result = QIcon()
     for scale in (1, 2, 3):
         pixmap = _paint(name, color, size * scale)
@@ -72,9 +78,7 @@ def clear_cache() -> None:
     _svg.cache_clear()
 
 
-def app_icon(accent: str, accent_hover: str, text_color: str) -> QIcon:
-    """Keep the existing theme-call signature; the brand is line-md chat-round-dots."""
-    result = QIcon()
-    for size in (16, 24, 32, 48, 64, 128, 256):
-        result.addPixmap(_paint("brand", accent, size))
-    return result
+@lru_cache(maxsize=1)
+def app_icon() -> QIcon:
+    """The original, full-color brand SVG, scalable at any display density."""
+    return QIcon(str(_APP_ICON))

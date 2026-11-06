@@ -6,6 +6,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from PyQt6.QtCore import QCoreApplication, QEvent
 from PyQt6.QtWidgets import QApplication
 
 
@@ -22,6 +23,20 @@ def qt_app() -> QApplication:
     app = app if isinstance(app, QApplication) else QApplication([])
     app.setQuitOnLastWindowClosed(False)
     return app
+
+
+@pytest.fixture(autouse=True)
+def cleanup_qt_windows():
+    app = QApplication.instance()
+    existing = set(app.topLevelWidgets()) if isinstance(app, QApplication) else set()
+    yield
+    app = QApplication.instance()
+    if isinstance(app, QApplication):
+        # Closing a Qt window hides it; dispose it before later theme/focus tests.
+        for widget in app.topLevelWidgets():
+            if widget not in existing:
+                widget.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
 
 
 class MemoryCredentials:

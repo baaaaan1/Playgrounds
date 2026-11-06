@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import sys
+
 import pytest
 from PyQt6.QtCore import QEvent, QPoint, QPointF, QSize, Qt
 from PyQt6.QtGui import QMouseEvent
@@ -63,7 +65,7 @@ def test_dialog_close_button_rejects_without_saving(qt_app) -> None:
 def test_material_line_icons_render_offline_at_multiple_scales(qt_app) -> None:
     for name in icons._NAMES:
         for scale in (1.0, 2.0):
-            pixmap = icons.icon(name, "#7c9cff", 24).pixmap(QSize(24, 24), scale)
+            pixmap = icons.icon(name, theme.tokens_for("dark")["accent"], 24).pixmap(QSize(24, 24), scale)
             image = pixmap.toImage()
             assert not image.isNull(), name
             visible = sum(image.pixelColor(x, y).alpha() > 0 for x in range(image.width()) for y in range(image.height()))
@@ -103,9 +105,10 @@ def test_long_title_is_plain_text_and_elided_without_displacing_controls(qt_app)
 
 def test_title_bar_tracks_window_icon_and_activation(qt_app) -> None:
     window = ChromeWindow()
-    icon = icons.icon("plus", "#ff0000", 22)
+    icon = icons.icon("plus", "#ff0000", 24)
     window.setWindowIcon(icon)
-    expected = icon.pixmap(QSize(22, 22), window.bar.devicePixelRatioF())
+    assert window.bar._brand.size() == QSize(24, 24)
+    expected = icon.pixmap(QSize(24, 24), window.bar.devicePixelRatioF())
     assert window.bar._brand.pixmap().toImage() == expected.toImage()
     for event_type, active in (
         (QEvent.Type.WindowActivate, True), (QEvent.Type.WindowDeactivate, False),
@@ -236,3 +239,117 @@ def test_fixed_size_window_disables_maximize_and_resize(qt_app) -> None:
     assert not window.bar.maximize_button.isEnabled()
     assert all(handle.isHidden() for handle in frame.handles)
     window.close()
+
+
+@pytest.mark.parametrize("handle_index", range(8))
+@pytest.mark.parametrize("grow", [False, True])
+def test_windowed_edge_and_corner_drags_respect_size_limits(qt_app, monkeypatch, handle_index, grow) -> None:
+    window = ChromeWindow()
+    window.setMaximumSize(700, 500)
+    window.show()
+    qt_app.processEvents()
+    monkeypatch.setattr(window.windowHandle(), "startSystemResize", lambda edges: False)
+    handle = window._frameless_resize_frame.handles[handle_index]
+    original = window.geometry()
+    position = handle.rect().center()
+    origin = handle.mapToGlobal(position)
+    edges = handle.edges
+    dx = -10000 if edges & Qt.Edge.LeftEdge else 10000
+    dy = -10000 if edges & Qt.Edge.TopEdge else 10000
+    delta = QPoint(dx, dy) if grow else QPoint(-dx, -dy)
+    try:
+        QTest.mousePress(handle, Qt.MouseButton.LeftButton, pos=position)
+        event = QMouseEvent(
+            QEvent.Type.MouseMove, QPointF(position + delta), QPointF(origin + delta),
+            Qt.MouseButton.NoButton, Qt.MouseButton.LeftButton, Qt.KeyboardModifier.NoModifier,
+        )
+        QApplication.sendEvent(handle, event)
+        qt_app.processEvents()
+        rect = window.geometry()
+        limit = window.maximumSize() if grow else window.minimumSize()
+        if edges & (Qt.Edge.LeftEdge | Qt.Edge.RightEdge):
+            assert rect.width() == limit.width()
+            assert rect.right() == original.right() if edges & Qt.Edge.LeftEdge else rect.left() == original.left()
+        else:
+            assert rect.left() == original.left() and rect.width() == original.width()
+        if edges & (Qt.Edge.TopEdge | Qt.Edge.BottomEdge):
+            assert rect.height() == limit.height()
+            assert rect.bottom() == original.bottom() if edges & Qt.Edge.TopEdge else rect.top() == original.top()
+        else:
+            assert rect.top() == original.top() and rect.height() == original.height()
+        QTest.mouseRelease(handle, Qt.MouseButton.LeftButton)
+        assert handle._origin is None
+    finally:
+        window.close()
+
+
+@pytest.mark.parametrize("handle_index", range(8))
+def test_windowed_resize_prefers_native_system_drag(qt_app, monkeypatch, handle_index) -> None:
+    window = ChromeWindow()
+    window.show()
+    qt_app.processEvents()
+    calls = []
+
+    def start_resize(edges):
+        calls.append(edges)
+        return True
+
+    monkeypatch.setattr(window.windowHandle(), "startSystemResize", start_resize)
+    handle = window._frameless_resize_frame.handles[handle_index]
+    try:
+        assert handle.isVisible()
+        QTest.mousePress(handle, Qt.MouseButton.LeftButton, pos=handle.rect().center())
+        assert calls == [handle.edges]
+        assert handle._origin is None
+        QTest.mouseRelease(handle, Qt.MouseButton.LeftButton)
+    finally:
+        window.close()
+
+
+@pytest.mark.parametrize("handle_index", range(8))
+def test_windows_native_resize_style_and_hit_targets(qt_app, handle_index) -> None:
+    if sys.platform != "win32" or qt_app.platformName() != "windows":
+        pytest.skip("Requires the native Windows backend")
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.windll.user32
+    user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+    user32.SendMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
+    user32.SendMessageW.restype = wintypes.LPARAM
+    window = ChromeWindow()
+    window.move(100, 100)
+    window.show()
+    qt_app.processEvents()
+    try:
+        hwnd = wintypes.HWND(int(window.winId()))
+        # Hit-test codes alone cannot start native sizing without WS_THICKFRAME.
+        assert user32.GetWindowLongW(hwnd, -16) & 0x00040000
+        original = window.geometry()
+        window.showMaximized()
+        qt_app.processEvents()
+        window.showNormal()
+        qt_app.processEvents()
+        assert window.geometry() == original
+        assert user32.GetWindowLongW(hwnd, -16) & 0x00040000
+        rect = wintypes.RECT()
+        client = wintypes.RECT()
+        assert user32.GetWindowRect(hwnd, ctypes.byref(rect))
+        assert user32.GetClientRect(hwnd, ctypes.byref(client))
+        assert client.right == rect.right - rect.left
+        assert client.bottom == rect.bottom - rect.top
+        edges = window._frameless_resize_frame.handles[handle_index].edges
+        x = (rect.left + rect.right) // 2
+        y = (rect.top + rect.bottom) // 2
+        if edges & Qt.Edge.LeftEdge:
+            x = rect.left + 1
+        elif edges & Qt.Edge.RightEdge:
+            x = rect.right - 1
+        if edges & Qt.Edge.TopEdge:
+            y = rect.top + 1
+        elif edges & Qt.Edge.BottomEdge:
+            y = rect.bottom - 1
+        expected = [12, 15, 10, 11, 13, 14, 16, 17][handle_index]
+        assert user32.SendMessageW(hwnd, 0x0084, 0, ((y & 0xFFFF) << 16) | (x & 0xFFFF)) == expected
+    finally:
+        window.close()

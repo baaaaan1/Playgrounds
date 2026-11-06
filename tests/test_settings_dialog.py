@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from PyQt6.QtCore import QSettings, Qt
+from PyQt6.QtCore import QSettings, Qt, QTimer
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import (
     QApplication,
@@ -39,6 +39,68 @@ def credential_writes(credentials, monkeypatch):
 def _dialog(workdir: Path, credentials) -> SettingsDialog:
     config = Config(QSettings(str(workdir / "settings.ini"), QSettings.Format.IniFormat))
     return SettingsDialog(config, credentials, theme.tokens_for("dark"))
+
+
+@pytest.mark.parametrize("modal", [False, True])
+@pytest.mark.parametrize("connections_editable", [False, True])
+def test_opening_settings_focuses_navigation_without_selecting_connection_name(
+    qt_app, workdir, credentials, modal, connections_editable,
+) -> None:
+    config = Config(QSettings(str(workdir / "settings.ini"), QSettings.Format.IniFormat))
+    dialog = SettingsDialog(
+        config, credentials, theme.tokens_for("dark"), connections_editable=connections_editable,
+    )
+    expected = dialog._connections_button if connections_editable else dialog._appearance_button
+    original_name = dialog._name.text()
+    observed = []
+
+    def inspect_and_close():
+        observed.append((dialog.focusWidget(), dialog._name.selectedText(), dialog._has_changes()))
+        dialog.reject()
+
+    if modal:
+        QTimer.singleShot(0, inspect_and_close)
+        dialog.exec()
+    else:
+        dialog.show()
+        dialog.activateWindow()
+        qt_app.processEvents()
+        inspect_and_close()
+    assert observed == [(expected, "", False)]
+    assert config.active_profile().name == original_name
+
+
+def test_only_explicit_add_selects_new_connection_name(qt_app, workdir, credentials):
+    dialog = _dialog(workdir, credentials)
+    dialog.show()
+    dialog.activateWindow()
+    qt_app.processEvents()
+    assert not dialog._name.hasSelectedText()
+    dialog._add_button.click()
+    assert dialog._name.hasFocus()
+    assert dialog._name.selectedText() == dialog._name.text()
+    dialog.reject()
+
+
+@pytest.mark.parametrize("theme_name", ["dark", "light"])
+def test_settings_tabs_keep_themed_keyboard_focus_border(qt_app, workdir, credentials, theme_name):
+    old_palette, old_qss = qt_app.palette(), qt_app.styleSheet()
+    theme.apply(qt_app, theme_name)
+    dialog = _dialog(workdir, credentials)
+    try:
+        dialog.show()
+        dialog.activateWindow()
+        qt_app.processEvents()
+        for button in (dialog._connections_button, dialog._appearance_button):
+            button.setFocus(Qt.FocusReason.TabFocusReason)
+            qt_app.processEvents()
+            assert button.hasFocus()
+            image = button.grab().toImage()
+            assert image.pixelColor(image.width() // 2, 0).name() == theme.tokens_for(theme_name)["accent_strong"].lower()
+    finally:
+        dialog.reject()
+        qt_app.setPalette(old_palette)
+        qt_app.setStyleSheet(old_qss)
 
 
 def test_custom_provider_allows_api_key(qt_app: QApplication, workdir: Path, credentials) -> None:
@@ -686,7 +748,7 @@ def test_appearance_is_separate_and_response_controls_expand(qt_app, workdir, cr
     dialog.show()
     assert isinstance(dialog._profile_list, QComboBox)
     assert isinstance(dialog._pages, QStackedWidget)
-    assert dialog._pages.count() == 2
+    assert dialog._pages.count() == 4
     assert dialog._pages.currentIndex() == 0
     assert dialog._base_url.isVisible()
     assert not dialog._theme_light.isVisible()
@@ -707,6 +769,14 @@ def test_appearance_is_separate_and_response_controls_expand(qt_app, workdir, cr
     assert dialog._theme_light.isVisible()
     assert dialog._theme_dark.isVisible()
     assert not dialog._base_url.isVisible()
+    dialog._updates_button.click()
+    assert dialog._pages.currentIndex() == 2
+    assert dialog._auto_updates.isVisible()
+    assert not dialog._theme_dark.isVisible()
+    dialog._about_button.click()
+    assert dialog._pages.currentWidget() is dialog._about
+    assert dialog._about.isVisible()
+    assert not dialog._auto_updates.isVisible()
     dialog._connections_button.click()
     assert dialog._pages.currentIndex() == 0
     assert dialog._base_url.isVisible()
@@ -870,7 +940,7 @@ def test_settings_theme_contrast(theme_name) -> None:
     for foreground, background, minimum in [
         ("text", "bg", 4.5), ("text_muted", "bg", 4.5),
         ("settings_success", "surface", 4.5), ("settings_error", "surface", 4.5),
-        ("settings_control_border", "surface", 3), ("accent", "surface", 3),
+        ("settings_control_border", "surface", 3), ("accent_strong", "surface", 3),
         ("accent_text", "accent", 4.5),
     ]:
         first, second = sorted([luminance(tokens[foreground]), luminance(tokens[background])])

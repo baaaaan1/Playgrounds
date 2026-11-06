@@ -115,7 +115,7 @@ class _ResizeFrame(QObject):
 class FramelessWindowMixin:
     """Place before QMainWindow/QDialog in the MRO; call setup before show()."""
 
-    def setup_frameless_window(self, resize_border: int = 6) -> None:
+    def setup_frameless_window(self, resize_border: int = 8) -> None:
         if hasattr(self, "_frameless_resize_frame"):
             return
         if resize_border < 1:
@@ -124,12 +124,32 @@ class FramelessWindowMixin:
         self.setWindowFlag(Qt.WindowType.FramelessWindowHint, True)
         self._frameless_resize_frame = _ResizeFrame(self, resize_border)
 
+    def showEvent(self, event) -> None:  # noqa: N802
+        super().showEvent(event)
+        if (
+            sys.platform == "win32" and QApplication.platformName() == "windows"
+            and hasattr(self, "_frameless_resize_frame")
+        ):
+            import ctypes
+            from ctypes import wintypes
+
+            user32 = ctypes.windll.user32
+            user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+            user32.SetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int, wintypes.LONG]
+            hwnd = wintypes.HWND(int(self.winId()))
+            style = user32.GetWindowLongW(hwnd, -16)  # GWL_STYLE
+            if not style & 0x00040000:  # WS_THICKFRAME enables Windows' native sizing loop.
+                user32.SetWindowLongW(hwnd, -16, style | 0x00040000)
+                user32.SetWindowPos(hwnd, None, 0, 0, 0, 0, 0x0037)  # FRAMECHANGED, no move/size/activation.
+
     def nativeEvent(self, event_type, message):  # noqa: N802
         if sys.platform == "win32" and hasattr(self, "_frameless_resize_frame"):
             import ctypes
             from ctypes import wintypes
 
             msg = wintypes.MSG.from_address(int(message))
+            if msg.message == 0x0083:  # WM_NCCALCSIZE: keep the native resize frame invisible.
+                return True, 0
             if msg.message == 0x0084:  # WM_NCHITTEST uses physical screen coordinates.
                 rect = wintypes.RECT()
                 # winId() can re-enter window creation from this native callback.
@@ -219,7 +239,8 @@ class TitleBar(QWidget):
 
         self._brand = QLabel(self)
         self._brand.setObjectName("WindowBrand")
-        self._brand.setFixedSize(22, 22)
+        self._brand.setFixedSize(24, 24)
+        self._brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._title = _TitleLabel(window.windowTitle() if title is None else title, self)
         self._title.setObjectName("WindowTitle")
         self._title.setProperty("active", window.isActiveWindow())
@@ -234,9 +255,9 @@ class TitleBar(QWidget):
         panels = QHBoxLayout(controls)
         panels.setContentsMargins(0, 0, 0, 0)
         panels.setSpacing(0)
-        self.minimize_button = self._button("WindowMinimize", "Minimize", controls)
-        self.maximize_button = self._button("WindowMaximize", "Maximize", controls)
-        self.close_button = self._button("WindowClose", "Close", controls)
+        self.minimize_button = self._button("WindowMinimize", self.tr("Minimize"), controls)
+        self.maximize_button = self._button("WindowMaximize", self.tr("Maximize"), controls)
+        self.close_button = self._button("WindowClose", self.tr("Close"), controls)
         self.close_button.installEventFilter(self)
         self.minimize_button.setVisible(show_minimize)
         self.maximize_button.setVisible(show_maximize)
@@ -275,8 +296,8 @@ class TitleBar(QWidget):
     def _refresh_brand(self) -> None:
         icon = self._window.windowIcon()
         if icon.isNull():
-            icon = icons.icon("brand", self._tokens["accent"], 22)
-        self._brand.setPixmap(icon.pixmap(QSize(22, 22), self.devicePixelRatioF()))
+            icon = icons.app_icon()
+        self._brand.setPixmap(icon.pixmap(self._brand.size(), self.devicePixelRatioF()))
 
     def _control_color(self) -> str:
         return self._tokens["text_muted" if self.property("active") else "text_faint"]
@@ -292,7 +313,7 @@ class TitleBar(QWidget):
 
     def _refresh_maximize(self) -> None:
         maximized = self._window.isMaximized()
-        action = "Restore" if maximized else "Maximize"
+        action = self.tr("Restore") if maximized else self.tr("Maximize")
         self.maximize_button.setToolTip(action)
         self.maximize_button.setAccessibleName(action)
         self.maximize_button.setIcon(icons.icon("restore" if maximized else "maximize", self._control_color()))

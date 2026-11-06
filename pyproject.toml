@@ -2,9 +2,12 @@
 name = "playgrounds"
 version = "0.1.0"
 description = "A lightweight desktop AI playground built with PyQt6"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 requires-python = ">=3.10"
 dependencies = [
   "PyQt6>=6.7",
+  "tomli>=2; python_version < '3.11'",
 ]
 
 [project.optional-dependencies]

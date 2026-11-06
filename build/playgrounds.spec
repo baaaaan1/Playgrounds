@@ -1,16 +1,34 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 import os
+import runpy
+from pathlib import Path
 
 ROOT = os.path.abspath(os.path.join(SPECPATH, ".."))
 ICON = os.path.join(SPECPATH, "app.ico")
-VERSION = os.path.join(SPECPATH, "version_info.txt")
+VERSION = os.path.join(SPECPATH, "generated", "version_info.txt")
+release = runpy.run_path(os.path.join(SPECPATH, "release.py"))
+release["generate_version_info"](release["Path"](VERSION))
+licenses = runpy.run_path(os.path.join(SPECPATH, "licenses.py"))
+LICENSES = licenses["collect_license_datas"](
+    Path(SPECPATH) / "generated" / "THIRD_PARTY_NOTICES.txt"
+)
+CATALOGS = [
+    (str(path), "app/resources/i18n")
+    for path in sorted((Path(ROOT) / "app/resources/i18n").glob("playgrounds_*.qm"))
+]
 
 a = Analysis(
     [os.path.join(ROOT, "run.py")],
     pathex=[ROOT],
     binaries=[],
-    datas=[(os.path.join(ROOT, "app", "resources", "line-md"), "app/resources/line-md")],
+    datas=[
+        (os.path.join(SPECPATH, "icon.svg"), "build"),
+        (os.path.join(ROOT, "app", "resources", "line-md"), "app/resources/line-md"),
+        (os.path.join(ROOT, "app", "resources", "material-symbols"), "app/resources/material-symbols"),
+        (os.path.join(ROOT, "pyproject.toml"), "app"),
+        (os.path.join(ROOT, "LICENSE"), "."),
+    ] + CATALOGS + LICENSES,
     hiddenimports=[],
     hookspath=[],
     hooksconfig={},
@@ -64,7 +82,7 @@ exe = EXE(
     console=False,
     disable_windowed_traceback=False,
     icon=ICON if os.path.exists(ICON) else None,
-    version=VERSION if os.path.exists(VERSION) else None,
+    version=VERSION,
 )
 
 coll = COLLECT(

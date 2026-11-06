@@ -1,3 +1,5 @@
 """Playgrounds - lightweight desktop AI playground."""
 
-__version__ = "0.1.0"
+from app.version import get_version
+
+__version__ = get_version()

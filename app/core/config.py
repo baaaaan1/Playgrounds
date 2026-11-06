@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from PyQt6.QtCore import QByteArray, QSettings
+from PyQt6.QtCore import QByteArray, QCoreApplication, QSettings
 
 from .profiles import ConnectionProfile
 from .providers.registry import provider_infos
@@ -16,6 +16,7 @@ DEFAULTS: dict[str, Any] = {
     "system_prompt": "",
     "sidebar_visible": True,
     "last_conversation": "",
+    "updates/automatic": True,
 }
 
 
@@ -65,7 +66,7 @@ class Config:
             # Do not silently replace existing profiles if their data is corrupt.
             data = json.loads(raw)
             if not isinstance(data, list) or not data:
-                raise ValueError("Saved connection profiles are invalid.")
+                raise ValueError(QCoreApplication.translate("Config", "Saved connection profiles are invalid."))
             return [ConnectionProfile.from_dict(item) for item in data]
 
         profiles: list[ConnectionProfile] = []
@@ -96,7 +97,9 @@ class Config:
     def save_profiles(self, profiles: list[ConnectionProfile], active_id: str) -> None:
         ids = [profile.id for profile in profiles]
         if not ids or len(set(ids)) != len(ids) or active_id not in ids:
-            raise ValueError("Profiles must have unique IDs and a valid active selection.")
+            raise ValueError(QCoreApplication.translate(
+                "Config", "Profiles must have unique IDs and a valid active selection.",
+            ))
         self.set("connections/profiles", json.dumps([p.to_dict() for p in profiles]))
         self.set("connections/active", active_id)
 
@@ -107,7 +110,7 @@ class Config:
 
     def select_profile(self, profile_id: str) -> None:
         if not any(p.id == profile_id for p in self.profiles()):
-            raise ValueError("Unknown connection profile.")
+            raise ValueError(QCoreApplication.translate("Config", "Unknown connection profile."))
         self.set("connections/active", profile_id)
 
     def save_profile(self, profile: ConnectionProfile) -> None:

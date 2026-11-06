@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(0, 1, 0, 0),
-    prodvers=(0, 1, 0, 0),
+    filevers={version_tuple},
+    prodvers={version_tuple},
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -15,11 +15,12 @@ VSVersionInfo(
         u'040904B0',
         [StringStruct(u'CompanyName', u'Playgrounds'),
          StringStruct(u'FileDescription', u'Playgrounds AI Playground'),
-         StringStruct(u'FileVersion', u'0.1.0'),
+         StringStruct(u'Comments', u'Licensed under GNU GPL version 3 only (GPL-3.0-only).'),
+         StringStruct(u'FileVersion', u'{version}'),
          StringStruct(u'InternalName', u'Playgrounds'),
          StringStruct(u'OriginalFilename', u'Playgrounds.exe'),
          StringStruct(u'ProductName', u'Playgrounds'),
-         StringStruct(u'ProductVersion', u'0.1.0')])
+         StringStruct(u'ProductVersion', u'{version}')])
     ]),
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
   ]

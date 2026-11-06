@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from PyQt6.QtCore import QSettings, Qt
+from PyQt6.QtCore import QSettings, QSize, Qt
 from PyQt6.QtTest import QTest
 from PyQt6.QtWidgets import QFrame, QMessageBox
 
@@ -57,6 +57,62 @@ def test_chat_reopens_exact_connection_and_model(qt_app, workdir, credentials) -
     window._model_combo.setCurrentText("")
     assert config.active_profile().model == "chat-model"
     window.close()
+
+
+@pytest.mark.parametrize("selected", ["current-model", "old-provider/model", ""])
+def test_old_chat_cannot_restore_foreign_model_into_current_endpoint(
+    qt_app, workdir, credentials, monkeypatch, selected,
+) -> None:
+    config = Config(QSettings(str(workdir / "settings.ini"), QSettings.Format.IniFormat))
+    config.set("updates/automatic", False)
+    profile = ConnectionProfile(
+        name="Current provider", base_url="https://current.example/v1",
+        model=selected, models=["current-model", "other-current-model"],
+    )
+    config.save_profiles([profile], profile.id)
+    store = ConversationStore(workdir / "chats")
+    chat = Conversation(profile_id=profile.id, model="old-provider/model")
+    chat.add(Message("user", "Old question"))
+    store.save(chat)
+    config.set("last_conversation", chat.id)
+    window = MainWindow(config, store, credentials)
+    calls = []
+    monkeypatch.setattr(window._controller._client, "start", lambda *args: calls.append(args))
+    try:
+        expected = "current-model" if selected == "current-model" else ""
+        assert config.active_profile().model == expected
+        assert window._model_combo.currentText() == expected
+        assert window._model_combo.findText("old-provider/model") == -1
+        assert "previous model" in window._banner.text()
+        assert not window._banner_wrap.isHidden()
+        window._composer.set_text("Follow up")
+        if not expected:
+            window._send()
+            assert calls == []
+            assert window._composer.text() == "Follow up"
+        window._model_combo.setCurrentIndex(window._model_combo.findText("current-model"))
+        window._send()
+        assert calls[0][0] == "https://current.example/v1/chat/completions"
+        assert calls[0][2]["model"] == "current-model"
+    finally:
+        window.close()
+
+
+def test_reopening_chat_still_restores_model_in_current_catalog(qt_app, workdir, credentials):
+    config = Config(QSettings(str(workdir / "settings.ini"), QSettings.Format.IniFormat))
+    config.set("updates/automatic", False)
+    profile = ConnectionProfile(model="a", models=["a", "b"])
+    config.save_profiles([profile], profile.id)
+    store = ConversationStore(workdir / "chats")
+    chat = Conversation(profile_id=profile.id, model="b", messages=[Message("user", "Question")])
+    store.save(chat)
+    config.set("last_conversation", chat.id)
+    window = MainWindow(config, store, credentials)
+    try:
+        assert config.active_profile().model == "b"
+        assert window._model_combo.currentText() == "b"
+    finally:
+        window.close()
 
 
 def test_busy_settings_allows_appearance_without_editing_connections(qt_app, workdir, credentials, monkeypatch) -> None:
@@ -209,7 +265,7 @@ def test_saving_theme_preserves_flushed_and_pending_stream_text(qt_app, workdir,
         window._controller._on_delta(" and pending text")
         window._open_settings()
         transcript = window._chat.toPlainText()
-        assert "ASISTEN" in transcript
+        assert "ASSISTANT" in transcript
         assert transcript.count("Visible partial answer and pending text") == 1
         assert window._controller.busy
         window._controller._on_delta(" and next chunk")
@@ -221,21 +277,24 @@ def test_saving_theme_preserves_flushed_and_pending_stream_text(qt_app, workdir,
         window.close()
 
 
-@pytest.mark.parametrize("width", [880, 1180])
+@pytest.mark.parametrize("width", [720, 880, 1180])
+@pytest.mark.parametrize("sidebar_visible", [True, False])
 @pytest.mark.parametrize("theme_name", ["dark", "light"])
-def test_connection_selectors_fit_inside_composer(qt_app, workdir, credentials, width, theme_name) -> None:
+def test_connection_selectors_fit_inside_composer(qt_app, workdir, credentials, width, sidebar_visible, theme_name) -> None:
     config = Config(QSettings(str(workdir / "settings.ini"), QSettings.Format.IniFormat))
     profile = ConnectionProfile(name="Long connection name " * 10, model="long-model-id-" * 20)
     config.save_profiles([profile], profile.id)
+    config.set("sidebar_visible", sidebar_visible)
     window = MainWindow(config, ConversationStore(workdir / "chats"), credentials)
     window._apply_theme(theme_name)
-    window.resize(width, 560)
+    window.resize(width, 480)
     window.show()
     qt_app.processEvents()
     try:
         composer = window._composer
         frame = composer._frame
         assert window.width() == width
+        assert window.height() == 480
         assert window._profile_combo is composer.profile_combo
         assert window._model_combo is composer.model_combo
         assert window.findChild(QFrame, "TopBar").findChildren(ChevronComboBox) == []
@@ -247,6 +306,12 @@ def test_connection_selectors_fit_inside_composer(qt_app, workdir, credentials, 
         assert not window._profile_combo.geometry().intersects(window._model_combo.geometry())
         assert window._profile_combo.currentData() == profile.id
         assert window._model_combo.currentText() == profile.model
+        assert window._empty.horizontalScrollBar().maximum() == 0
+        assert window._empty.verticalScrollBar().maximum() > 0
+        window.show_demo()
+        qt_app.processEvents()
+        assert window.size() == QSize(width, 480)
+        assert window._splitter.widget(1).rect().contains(composer.parentWidget().geometry())
     finally:
         window.close()
 

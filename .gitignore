@@ -8,6 +8,7 @@ ENV/
 .eggs/
 build/app.ico
 build/playgrounds/
+build/generated/
 build/installer/bin/
 build/installer/obj/
 dist/

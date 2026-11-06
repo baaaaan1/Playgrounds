@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -46,9 +47,19 @@ class ConversationStore:
     def save(self, conversation: Conversation) -> None:
         path = self._path(conversation.id)
         payload: dict[str, Any] = conversation.to_dict()
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-        os.replace(tmp, path)
+        tmp: Path | None = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", dir=self.root, suffix=".tmp", delete=False,
+            ) as stream:
+                tmp = Path(stream.name)
+                json.dump(payload, stream, ensure_ascii=False, indent=2)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(tmp, path)
+        finally:
+            if tmp is not None:
+                tmp.unlink(missing_ok=True)
 
     def load(self, conversation_id: str) -> Conversation | None:
         path = self._path(conversation_id)
@@ -56,9 +67,9 @@ class ConversationStore:
             return None
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+            return Conversation.from_dict(raw)
+        except (OSError, ValueError, TypeError, AttributeError, OverflowError):
             return None
-        return Conversation.from_dict(raw)
 
     def delete(self, conversation_id: str) -> None:
         try:
@@ -69,10 +80,8 @@ class ConversationStore:
     def list(self) -> list[Conversation]:
         conversations: list[Conversation] = []
         for path in self.root.glob("*.json"):
-            try:
-                raw = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
-                continue
-            conversations.append(Conversation.from_dict(raw))
+            conversation = self.load(path.stem)
+            if conversation is not None:
+                conversations.append(conversation)
         conversations.sort(key=lambda c: c.updated_at, reverse=True)
         return conversations
