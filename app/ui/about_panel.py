@@ -3,13 +3,15 @@ from __future__ import annotations
 from pathlib import Path
 from platform import python_version
 
-from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, QSize, Qt
+from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, QSize, Qt, QUrl
+from PyQt6.QtGui import QDesktopServices, QIcon
 from PyQt6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QLabel,
     QPlainTextEdit,
     QScrollArea,
+    QToolButton,
     QVBoxLayout,
     QWidget,
 )
@@ -18,6 +20,8 @@ from .. import __version__
 from . import icons
 
 _REPOSITORY = "https://github.com/baaaaan1/Playgrounds"
+_SUPPORT_URL = "https://tako.id/Baaaaan1"
+_SUPPORT_QR = Path(__file__).resolve().parents[2] / "build" / "qr-code.svg"
 
 
 class AboutPanel(QScrollArea):
@@ -169,6 +173,36 @@ class AboutPanel(QScrollArea):
                 label.setOpenExternalLinks(True)
                 body.addWidget(label)
             layout.addWidget(group)
+
+        support = QGroupBox(self.tr("Support my work"))
+        support_layout = QVBoxLayout(support)
+        support_layout.setSpacing(10)
+        for paragraph in (
+            self.tr('If my projects have been useful to you, you can support my work through '
+                    '<b><a href="{support_url}">tako.id</a></b>, a platform for sending tips to creators. '
+                    'Your support helps fund hardware prototypes, components, testing, '
+                    'and future open-source projects.').format(support_url=_SUPPORT_URL),
+            self.tr('Scan or click the QR code to support my work at '
+                    '<a href="{support_url}">tako.id/Baaaaan1</a>.').format(support_url=_SUPPORT_URL),
+        ):
+            label = QLabel(paragraph)
+            label.setObjectName("SettingsHelp")
+            label.setWordWrap(True)
+            label.setTextFormat(Qt.TextFormat.RichText)
+            label.setTextInteractionFlags(Qt.TextInteractionFlag.TextBrowserInteraction)
+            label.setOpenExternalLinks(True)
+            support_layout.addWidget(label)
+        qr = QToolButton()
+        qr.setObjectName("SupportQrCode")
+        qr.setIcon(QIcon(str(_SUPPORT_QR)))
+        qr.setIconSize(QSize(160, 160))
+        qr.setAutoRaise(True)
+        qr.setCursor(Qt.CursorShape.PointingHandCursor)
+        qr.setAccessibleName(self.tr("Support my work on tako.id"))
+        qr.setToolTip(self.tr("Open {support_url} in your browser").format(support_url=_SUPPORT_URL))
+        qr.clicked.connect(lambda: QDesktopServices.openUrl(QUrl(_SUPPORT_URL)))
+        support_layout.insertWidget(1, qr, alignment=Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(support)
 
         self._icon_license = QPlainTextEdit()
         self._symbols_license = QPlainTextEdit()

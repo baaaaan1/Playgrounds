@@ -93,6 +93,11 @@ def write_release_assets(asset: Path, output: Path, *, tag: str, notes: str = ""
         raise ValueError("A built MSI matching the project version is required")
     if output.exists() and any(output.iterdir()):
         raise ValueError("Release output directory must be empty to prevent stale assets")
+    if not notes:
+        notes_path = ROOT / "build" / "release-notes" / f"{version}.md"
+        notes = notes_path.read_text(encoding="utf-8")
+    if not notes.strip():
+        raise ValueError("Release notes must not be empty")
     output.mkdir(parents=True, exist_ok=True)
     installer = output / asset.name
     shutil.copy2(asset, installer)

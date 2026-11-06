@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from app.core.updates import Release
 from app.version import get_version
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,7 +53,8 @@ def test_release_source_must_match_clean_tag(release, monkeypatch):
         release["validate_source_tag"](tag)
 
 
-def test_release_assets_hash_final_installer_and_all_downloads(release, workdir, monkeypatch):
+@pytest.mark.parametrize("notes", ["Changes", ""])
+def test_release_assets_hash_final_installer_and_all_downloads(release, workdir, monkeypatch, notes):
     mock_git(monkeypatch)
     version = get_version()
     tag = f"v{version}"
@@ -69,11 +71,13 @@ def test_release_assets_hash_final_installer_and_all_downloads(release, workdir,
         Path(archive_path).write_bytes(b"source at exact tag")
 
     monkeypatch.setattr(subprocess, "run", archive)
-    release["write_release_assets"](asset, output, tag=tag, notes="Changes")
+    release["write_release_assets"](asset, output, tag=tag, notes=notes)
     assert (output / asset.name).read_bytes() == asset.read_bytes()
     manifest = json.loads((output / "update.json").read_text(encoding="utf-8"))
     assert manifest["sha256"] == hashlib.sha256(asset.read_bytes()).hexdigest()
-    assert manifest["notes"] == "Changes"
+    expected_notes = notes or (ROOT / "build" / "release-notes" / f"{version}.md").read_text(encoding="utf-8")
+    assert manifest["notes"] == expected_notes
+    assert Release.parse((output / "update.json").read_bytes()).notes == expected_notes
     environment = json.loads((output / "build-environment.json").read_text(encoding="utf-8"))
     assert environment["commit"] == "abc123"
     assert environment["tag"] == tag
@@ -94,6 +98,48 @@ def test_release_packaging_rejects_wrong_asset(release, workdir, monkeypatch):
             workdir / "wrong.msi", workdir / "release", tag=f"v{get_version()}",
         )
     assert not (workdir / "release").exists()
+
+
+@pytest.mark.parametrize("notes", [None, "", " \n\t"])
+def test_release_packaging_requires_versioned_notes(release, workdir, monkeypatch, notes):
+    mock_git(monkeypatch)
+    monkeypatch.setitem(release["write_release_assets"].__globals__, "ROOT", workdir)
+    version = get_version()
+    asset = workdir / f"Playgrounds-{version}-x64.msi"
+    asset.write_bytes(b"MSI")
+    if notes is not None:
+        notes_dir = workdir / "build" / "release-notes"
+        notes_dir.mkdir(parents=True)
+        (notes_dir / f"{version}.md").write_text(notes, encoding="utf-8")
+    error = FileNotFoundError if notes is None else ValueError
+    with pytest.raises(error):
+        release["write_release_assets"](asset, workdir / "release", tag=f"v{version}")
+    assert not (workdir / "release").exists()
+
+
+def test_current_release_notes_match_version_and_unsigned_installer():
+    version = get_version()
+    notes = (ROOT / "build" / "release-notes" / f"{version}.md").read_text(encoding="utf-8")
+    assert f"## Playgrounds {version}" in notes
+    assert f"Playgrounds-{version}-x64.msi" in notes
+    assert "**unsigned**" in notes
+    assert "checksum does not replace a publisher signature" in notes
+
+
+def test_release_workflow_uses_tagged_notes_and_remains_draft_only():
+    workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert 'foreach ($operation in @("/i", "/fa", "/x"))' in workflow
+    assert "MSI modified user conversation data" in workflow
+    assert "Installed application smoke test failed" in workflow
+    draft = workflow.split("  draft-release:", 1)[1]
+    assert "ref: refs/tags/${{ env.RELEASE_TAG }}" in draft
+    assert 'notes_file="build/release-notes/${RELEASE_TAG#v}.md"' in draft
+    assert '--notes-file "$notes_file"' in draft
+    assert "--verify-tag --draft" in draft
+    assert "sha256sum --check SHA256SUMS.txt" in draft
+    assert "--generate-notes" not in draft
+    assert "--latest" not in draft
+    assert "gh release edit" not in draft
 
 
 @pytest.mark.parametrize(

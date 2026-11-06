@@ -2,8 +2,18 @@ from pathlib import Path
 from platform import python_version
 
 import pytest
-from PyQt6.QtCore import PYQT_VERSION_STR, QT_VERSION_STR, QCoreApplication, QEvent, QSettings, Qt
-from PyQt6.QtWidgets import QGroupBox, QLabel
+from PyQt6.QtCore import (
+    PYQT_VERSION_STR,
+    QT_VERSION_STR,
+    QCoreApplication,
+    QEvent,
+    QSettings,
+    QSize,
+    Qt,
+)
+from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtTest import QTest
+from PyQt6.QtWidgets import QGroupBox, QLabel, QToolButton
 
 from app import __version__
 from app.core.config import Config
@@ -41,6 +51,7 @@ def test_about_contains_tagline_version_credits_and_project_links(qt_app, widget
         "https://github.com/baaaaan1/Playgrounds/graphs/contributors",
         "https://icon-sets.iconify.design/line-md/",
         "https://icon-sets.iconify.design/material-symbols/",
+        "https://tako.id/Baaaaan1",
     ):
         assert f'href="{url}"' in text
     for label in labels:
@@ -48,6 +59,36 @@ def test_about_contains_tagline_version_credits_and_project_links(qt_app, widget
             assert label.openExternalLinks()
             assert label.textInteractionFlags() & Qt.TextInteractionFlag.LinksAccessibleByKeyboard
     panel.close()
+
+
+def test_support_qr_and_copy_are_available_offline(qt_app, widgets, monkeypatch):
+    opened = []
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda url: opened.append(url.toString()))
+    panel = AboutPanel()
+    widgets.append(panel)
+    group = next(group for group in panel.findChildren(QGroupBox) if group.title() == "Support my work")
+    text = "\n".join(label.text() for label in group.findChildren(QLabel))
+    for phrase in ("hardware prototypes", "components", "testing", "future open-source projects",
+                   "Scan or click the QR code", 'href="https://tako.id/Baaaaan1"'):
+        assert phrase in text
+    qr = group.findChild(QToolButton, "SupportQrCode")
+    assert qr is not None
+    assert qr.iconSize() == QSize(160, 160)
+    assert qr.accessibleName() == "Support my work on tako.id"
+    assert qr.focusPolicy() != Qt.FocusPolicy.NoFocus
+    image = qr.icon().pixmap(QSize(160, 160)).toImage()
+    assert not image.isNull()
+    # Check both a finder-pattern center and its white inner border.
+    assert image.pixelColor(27, 27).lightness() < 200
+    assert image.pixelColor(17, 26).lightness() > 240
+    assert opened == []
+    panel.show()
+    panel.ensureWidgetVisible(qr)
+    qr.setFocus()
+    QTest.keyClick(qr, Qt.Key.Key_Space)
+    assert opened == ["https://tako.id/Baaaaan1"]
+    qr.click()
+    assert opened == ["https://tako.id/Baaaaan1"] * 2
 
 
 def test_about_describes_current_features_data_storage_and_shortcuts(qt_app, widgets):

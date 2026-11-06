@@ -24,6 +24,7 @@ a = Analysis(
     binaries=[],
     datas=[
         (os.path.join(SPECPATH, "icon.svg"), "build"),
+        (os.path.join(SPECPATH, "qr-code.svg"), "build"),
         (os.path.join(ROOT, "app", "resources", "line-md"), "app/resources/line-md"),
         (os.path.join(ROOT, "app", "resources", "material-symbols"), "app/resources/material-symbols"),
         (os.path.join(ROOT, "pyproject.toml"), "app"),

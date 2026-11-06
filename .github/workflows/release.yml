@@ -50,6 +50,35 @@ jobs:
       - name: Test and build release assets
         shell: pwsh
         run: ./build/build.ps1 -Installer -ReleaseTag $env:RELEASE_TAG
+      - name: Verify MSI installation, repair, and removal
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $msi = (Get-Item dist/release/Playgrounds-*-x64.msi).FullName
+          $exe = Join-Path $env:LOCALAPPDATA "Playgrounds/Playgrounds.exe"
+          $shortcut = Join-Path $env:APPDATA "Microsoft/Windows/Start Menu/Programs/Playgrounds/Playgrounds.lnk"
+          $data = Join-Path $env:APPDATA "Playgrounds/conversations"
+          [System.IO.Directory]::CreateDirectory($data) | Out-Null
+          $marker = Join-Path $data ".release-verification"
+          $sentinel = [guid]::NewGuid().ToString()
+          [System.IO.File]::WriteAllText($marker, $sentinel)
+          try {
+            foreach ($operation in @("/i", "/fa", "/x")) {
+              $log = Join-Path $env:RUNNER_TEMP "playgrounds-msi-$($operation.Substring(1)).log"
+              $result = Start-Process msiexec.exe -ArgumentList "$operation `"$msi`" /qn /norestart /l*v `"$log`"" -Wait -PassThru
+              if ($result.ExitCode -notin @(0, 3010)) { throw "MSI $operation failed: $($result.ExitCode); see $log" }
+              if ([System.IO.File]::ReadAllText($marker) -ne $sentinel) { throw "MSI modified user conversation data" }
+              if ($operation -eq "/x") {
+                if ((Test-Path $exe) -or (Test-Path $shortcut)) { throw "MSI uninstall left the application or shortcut behind" }
+              } else {
+                if (-not ((Test-Path $exe) -and (Test-Path $shortcut))) { throw "MSI did not install the application and Start Menu shortcut" }
+                python -c "import subprocess, sys; sys.exit(subprocess.run([sys.argv[1], '--smoke-native'], timeout=30).returncode)" $exe
+                if ($LASTEXITCODE -ne 0) { throw "Installed application smoke test failed" }
+              }
+            }
+          } finally {
+            Remove-Item -LiteralPath $marker -ErrorAction SilentlyContinue
+          }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: windows-release
@@ -68,6 +97,10 @@ jobs:
       GH_REPO: ${{ github.repository }}
       RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
     steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: refs/tags/${{ env.RELEASE_TAG }}
+          persist-credentials: false
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           name: windows-release
@@ -78,11 +111,16 @@ jobs:
       - name: Create draft for manual verification
         shell: bash
         run: |
+          notes_file="build/release-notes/${RELEASE_TAG#v}.md"
+          if [ ! -s "$notes_file" ]; then
+            echo "Release notes are missing or empty: $notes_file"
+            exit 1
+          fi
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
             echo "Release already exists. Refusing to replace existing assets."
             exit 1
           fi
           gh release create "$RELEASE_TAG" release/* \
-            --verify-tag --draft --generate-notes \
+            --verify-tag --draft \
             --title "Playgrounds $RELEASE_TAG" \
-            --notes 'Windows x64 MSI. This build is unsigned. Verify SHA256SUMS.txt before installation. Maintainer: test clean install, launch, upgrade, uninstall, and review bundled licenses and corresponding source before publishing this draft.'
+            --notes-file "$notes_file"
