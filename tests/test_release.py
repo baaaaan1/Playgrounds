@@ -128,6 +128,7 @@ def test_current_release_notes_match_version_and_unsigned_installer():
 
 def test_release_workflow_uses_tagged_notes_and_remains_draft_only():
     workflow = (ROOT / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+    assert "dotnet tool install --global wix --version 5.0.2" in workflow
     assert 'foreach ($operation in @("/i", "/fa", "/x"))' in workflow
     assert "MSI modified user conversation data" in workflow
     assert "Installed application smoke test failed" in workflow

@@ -37,7 +37,7 @@ try {
             Join-Path $env:USERPROFILE ".dotnet\tools\wix.exe"
         }
         if (-not (Test-Path -LiteralPath $wix -PathType Leaf)) {
-            throw "WiX Toolset v5+ (wix.exe) is required. Release CI uses: dotnet tool install --global wix --version 7.0.1"
+            throw "WiX Toolset v5+ (wix.exe) is required. Release CI uses: dotnet tool install --global wix --version 5.0.2"
         }
     }
 

@@ -45,7 +45,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "pip upgrade failed" }
           python -m pip install -e ".[dev]"
           if ($LASTEXITCODE -ne 0) { throw "dependency install failed" }
-          dotnet tool install --global wix --version 7.0.1
+          dotnet tool install --global wix --version 5.0.2
           if ($LASTEXITCODE -ne 0) { throw "WiX install failed" }
       - name: Test and build release assets
         shell: pwsh

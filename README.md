@@ -105,7 +105,7 @@ Checksum membantu mendeteksi file yang rusak atau berubah.
 | GUI | PyQt6 6.7+, termasuk QtSvg untuk ikon SVG |
 | Dependensi pengembangan | Ekstra `.[dev]`, termasuk pytest, Ruff, PyInstaller, dan Pillow |
 | Installer MSI | WiX v5+; hanya diperlukan untuk membangun MSI |
-| Lingkungan rilis CI | Python 3.12 x64, .NET SDK 8, WiX 7.0.1 |
+| Lingkungan rilis CI | Python 3.12 x64, .NET SDK 8, WiX 5.0.2 |
 
 Dari direktori utama repository, buat virtual environment, pasang dependensi,
 lalu jalankan aplikasi:
@@ -238,7 +238,7 @@ Untuk membangun EXE beserta `dist\Playgrounds-<versi>-x64.msi`, pasang WiX terle
 (.NET SDK diperlukan untuk perintah instalasi tool):
 
 ```powershell
-dotnet tool install --global wix --version 7.0.1
+dotnet tool install --global wix --version 5.0.2
 powershell -File build\build.ps1 -Installer
 ```
 
@@ -496,7 +496,7 @@ Checksums help detect corrupted or modified files.
 | GUI | PyQt6 6.7+, including QtSvg for SVG icons |
 | Development dependencies | The `.[dev]` extra, including pytest, Ruff, PyInstaller, and Pillow |
 | MSI installer | WiX v5+; required only when building an MSI |
-| CI release environment | Python 3.12 x64, .NET SDK 8, WiX 7.0.1 |
+| CI release environment | Python 3.12 x64, .NET SDK 8, WiX 5.0.2 |
 
 From the repository root, create a virtual environment, install dependencies,
 and start the application:
@@ -629,7 +629,7 @@ To build the EXE and `dist\Playgrounds-<version>-x64.msi`, install WiX first
 (the .NET SDK is required for the tool installation command):
 
 ```powershell
-dotnet tool install --global wix --version 7.0.1
+dotnet tool install --global wix --version 5.0.2
 powershell -File build\build.ps1 -Installer
 ```
 
